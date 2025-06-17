@@ -2,6 +2,7 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 from pathlib import Path
+from matplotlib.widgets import Button
 
 # Create output directory if it doesn't exist
 output_dir = Path('output')
@@ -25,6 +26,14 @@ class PointManager:
         """Clear all selected points"""
         self.selected_points.clear()
     
+    def select_all(self, points):
+        """Select all points"""
+        self.selected_points = points.copy()
+    
+    def deselect_all(self):
+        """Deselect all points"""
+        self.selected_points.clear()
+    
     def save_points(self, filename):
         """Save points to a text file"""
         self.filename = filename
@@ -44,9 +53,37 @@ class PointManager:
         print(f"Points loaded from {filename}")
         return self.selected_points
 
-def on_click(event, point_manager, img_display, all_points):
+def draw_wireframe(ax, points, line_width=0.5, point_size=1, color='b'):
+    """Draw a wireframe visualization of the given points
+    
+    Args:
+        ax: matplotlib axis to draw on
+        points: list of (x,y) points
+        line_width: width of connecting lines
+        point_size: size of point markers
+        color: color of lines and points
+    """
+    ax.clear()
+    if len(points) > 1:
+        points = np.array(points)
+        # Draw lines between consecutive points
+        for i in range(len(points)-1):
+            ax.plot([points[i][0], points[i+1][0]], 
+                    [points[i][1], points[i+1][1]], 
+                    f'{color}-', linewidth=line_width)
+        # Draw line from last point to first point to close the shape
+        ax.plot([points[-1][0], points[0][0]], 
+                [points[-1][1], points[0][1]], 
+                f'{color}-', linewidth=line_width)
+        # Draw small points
+        ax.plot(points[:, 0], points[:, 1], f'{color}.', markersize=point_size)
+    ax.set_title('Wireframe Outline')
+    ax.axis('off')
+    ax.invert_yaxis()  # Invert y-axis to match image coordinates
+
+def on_click(event, point_manager, img_display, all_points, ax2):
     """Handle mouse click events"""
-    if event.inaxes is not None:
+    if event.inaxes is not None and event.inaxes not in [ax_select, ax_deselect]:  # Ignore clicks on buttons
         x, y = int(event.xdata), int(event.ydata)
         clicked_point = (x, y)
         
@@ -69,9 +106,40 @@ def on_click(event, point_manager, img_display, all_points):
                 color = (0, 255, 0)  # Green for selected
             
             # Draw/update point on image
-            cv.circle(img_display, closest_point, 3, color, -1)
+            cv.circle(img_display, closest_point, 2, color, -1)  # Reduced point size to 2
+            
+            # Update both plots
+            plt.subplot(121)
             plt.imshow(cv.cvtColor(img_display, cv.COLOR_BGR2RGB))
+            
+            # Update wireframe plot
+            draw_wireframe(ax2, point_manager.selected_points)
+            
             plt.draw()
+
+def select_all_callback(event, point_manager, all_points, img_display, ax2):
+    """Callback for select all button"""
+    point_manager.select_all(all_points)
+    # Update display
+    img_display = cv.cvtColor(img, cv.COLOR_GRAY2BGR)  # Reset image
+    for point in all_points:
+        cv.circle(img_display, point, 2, (0, 255, 0), -1)  # Green for selected
+    plt.subplot(121)
+    plt.imshow(cv.cvtColor(img_display, cv.COLOR_BGR2RGB))
+    draw_wireframe(ax2, point_manager.selected_points)
+    plt.draw()
+
+def deselect_all_callback(event, point_manager, all_points, img_display, ax2):
+    """Callback for deselect all button"""
+    point_manager.deselect_all()
+    # Update display
+    img_display = cv.cvtColor(img, cv.COLOR_GRAY2BGR)  # Reset image
+    for point in all_points:
+        cv.circle(img_display, point, 2, (0, 0, 255), -1)  # Red for unselected
+    plt.subplot(121)
+    plt.imshow(cv.cvtColor(img_display, cv.COLOR_BGR2RGB))
+    draw_wireframe(ax2, point_manager.selected_points)
+    plt.draw()
 
 # Read the image
 img = cv.imread('test_photos/w3_youtube_0838_1032_edward_island.png', cv.IMREAD_GRAYSCALE)
@@ -99,17 +167,34 @@ for contour in contours:
         x, y = point[0]
         all_points.append((x, y))
         point_manager.add_point((x, y))  # Add all points to selected points initially
-        cv.circle(img_display, (x, y), 3, (0, 255, 0), -1)  # Green for selected
+        cv.circle(img_display, (x, y), 2, (0, 255, 0), -1)  # Reduced point size to 2
 
 # Display image and set up click handler
-plt.figure(figsize=(12, 6))
+plt.figure(figsize=(12, 8))  # Made figure taller to accommodate buttons
+
+# Create subplots with more space at the bottom
 plt.subplot(121)
 plt.imshow(cv.cvtColor(img_display, cv.COLOR_BGR2RGB))
 plt.title('Click to deselect points (green=selected, red=deselected)')
 plt.axis('off')
 
-# Connect the click event
-plt.connect('button_press_event', lambda event: on_click(event, point_manager, img_display, all_points))
+# Create second subplot for wireframe
+ax2 = plt.subplot(122)
+ax2.set_title('Wireframe Outline')
+ax2.axis('off')
+ax2.invert_yaxis()
+
+# Add buttons below the plots
+plt.subplots_adjust(bottom=0.15)  # Increased bottom margin
+ax_select = plt.axes((0.3, 0.05, 0.2, 0.05))  # Moved buttons down
+ax_deselect = plt.axes((0.6, 0.05, 0.2, 0.05))  # Moved buttons down
+btn_select = Button(ax_select, 'Select All')
+btn_deselect = Button(ax_deselect, 'Deselect All')
+
+# Connect the click event and button callbacks
+plt.connect('button_press_event', lambda event: on_click(event, point_manager, img_display, all_points, ax2))
+btn_select.on_clicked(lambda event: select_all_callback(event, point_manager, all_points, img_display, ax2))
+btn_deselect.on_clicked(lambda event: deselect_all_callback(event, point_manager, all_points, img_display, ax2))
 
 plt.tight_layout()
 plt.show()
