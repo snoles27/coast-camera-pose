@@ -37,9 +37,7 @@ class Camera:
 
         #transform this vector to camera frame coordinates using quaternion q
         r_poi_cam_cam_norm = quaternion.rotate_vectors(q, r_poi_cam_ecef_norm)
-
         x,y,z = r_poi_cam_cam_norm
-
         # Only return if point is in front of the camera (x < 0)
         if x>=0:
             return None
@@ -49,10 +47,8 @@ class Camera:
         #only return if point is in the vertical (z) FOV
         if abs(z)>np.sin(self.fov/2)/self.aspect_ratio:
             return None
-            
         #convert to pinhole camera convention and return
-        return np.array([y,z]/2)
-
+        return np.array([y/2,z/2])
 
 
 
