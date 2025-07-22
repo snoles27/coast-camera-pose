@@ -154,20 +154,38 @@ contours, hierarchy = cv.findContours(edges, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_S
 # Create a copy of the image for drawing
 img_display = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
 
-# Store all points and initialize them as selected
+# Store all points and find outer points
 all_points = []
+outer_points = []
 point_manager = PointManager()
 
-# Process contours and initialize all points as selected
+# Process contours and find outer points
 for contour in contours:
     epsilon = 0.001 * cv.arcLength(contour, True)
     approx = cv.approxPolyDP(contour, epsilon, True)
     
+    # Convert contour to points and add to all_points
     for point in approx:
         x, y = point[0]
         all_points.append((x, y))
-        point_manager.add_point((x, y))  # Add all points to selected points initially
-        cv.circle(img_display, (x, y), 2, (0, 255, 0), -1)  # Reduced point size to 2
+    
+    # For outer points, use every 4th point to reduce density
+    outer_indices = list(range(0, len(approx), 4))
+    if len(outer_indices) < 3:  # Ensure we have at least 3 points
+        outer_indices = list(range(0, len(approx), max(1, len(approx) // 3)))
+    
+    for idx in outer_indices:
+        if idx < len(approx):
+            x, y = approx[idx][0]
+            outer_points.append((x, y))
+
+# Initialize with only outer points selected
+for point in all_points:
+    if point in outer_points:
+        point_manager.add_point(point)
+        cv.circle(img_display, point, 2, (0, 255, 0), -1)  # Green for selected (outer)
+    else:
+        cv.circle(img_display, point, 2, (0, 0, 255), -1)  # Red for unselected (inner)
 
 # Display image and set up click handler
 plt.figure(figsize=(12, 8))  # Made figure taller to accommodate buttons
