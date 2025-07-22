@@ -8,7 +8,7 @@ from scipy.optimize import minimize
 from pyproj import Transformer
 import matplotlib.pyplot as plt
 
-
+OUT_OF_FRAME_VALUE = 3
 
 class Camera:
     """
@@ -50,7 +50,7 @@ class Camera:
         x, y, z = r_poi_cam_cam_norm
         # Only return if point is in front of the camera (x < 0)
         if x>=0:
-            return None
+            return [OUT_OF_FRAME_VALUE, OUT_OF_FRAME_VALUE]
         #only return if point is in the horozontal (y) FOV
         # if abs(y)>np.sin(self.fov/2):
         #     return None
@@ -148,6 +148,16 @@ class Curve:
         if pts.shape[0] < 2:
             raise ValueError("Need at least two points to plot a curve.")
 
+        # For 2D plots, remove points that match OUT_OF_FRAME
+        if pts.shape[1] == 2:
+
+            # Keep only points that are not OUT_OF_FRAME_VALUE in any coordinate
+            mask = ~np.any(pts == OUT_OF_FRAME_VALUE, axis=1)
+            pts = pts[mask]
+            if pts.shape[0] < 2:
+                raise ValueError("Not enough in-frame points to plot a 2D curve.")
+
+
         # Determine if curve is 2D or 3D
         is_3d = pts.shape[1] == 3
 
@@ -175,12 +185,12 @@ class Curve:
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
         else:
-            # 2D plotting
-            x_fine, y_fine = interp_pts
-            ax.plot(pts[:,0], pts[:,1], 'ro', label='Original Points')
-            ax.plot(x_fine, y_fine, 'b-', label=f'Spline Curve (k={k})', **plot_kwargs)
-            ax.set_xlabel('X')
-            ax.set_ylabel('Y')
+            # 2D plotting (Y,Z frame)
+            y_fine, z_fine = interp_pts  # 2D points are in Y,Z
+            ax.plot(pts[:,0], pts[:,1], 'ro', label='Original Points')  # pts[:,0]=Y, pts[:,1]=Z
+            ax.plot(y_fine, z_fine, 'b-', label=f'Spline Curve (k={k})', **plot_kwargs)
+            ax.set_xlabel('Y')
+            ax.set_ylabel('Z')
 
         ax.legend()
         if show:
@@ -200,7 +210,6 @@ class Curve:
             np.ndarray: The center of mass as a 1D array of shape (dim,)
         """
         
-        print(f"{self.points=}")
         pts = np.array(self.points)
         if len(pts) == 0:
             raise ValueError("Curve has no points.")
@@ -370,26 +379,37 @@ class MatchFrames:
         return cost
 
     
-    def run_unconstrained(self, spline_order = 1, number_samples = 20, penatly_factor = 100):
+    def run_unconstrained(self, spline_order=1, number_samples=20, penatly_factor=100, max_iterations=1000):
         """
         run the optimization after setting it up
+
+        Parameters:
+        spline_order: int, order of the spline
+        number_samples: int, number of samples along the curve
+        penatly_factor: float, penalty factor for unconstrained optimization
+        max_iterations: int, maximum number of iterations for the optimizer
         """ 
 
-        #check if the inital condition is set
+        # check if the initial condition is set
         if self.initial_r is None or self.initial_q is None:
             self.auto_initial_r_q()
         
-        #create the objective function
+        # create the objective function
         com_objective = self.create_com_objective_unconstrained(penatly_factor)
         curve_objective = self.create_curve_objective_unconstrained(number_samples, spline_order, penatly_factor)
         
-        #run the coarse optimzation first on the center of masses
+        # run the coarse optimization first on the center of masses
         x0 = self.get_inital_x()
-        x = minimize(com_objective, x0, method='Nelder-Mead')
-        #run the full optimization on the curves with the solution to the center of mass optimization as the inital condition
+        res = minimize(
+            com_objective,
+            x0,
+            method='Nelder-Mead',
+            options={'maxiter': max_iterations}
+        )
+        # run the full optimization on the curves with the solution to the center of mass optimization as the initial condition
 
-        #return r and q solutions
-        return x[0:3], x[3:7]
+        # return r and q solutions
+        return res.x[0:3], quaternion.from_float_array(res.x[3:7])
 
     def plot_results(self, r, q, ax=None):
         """

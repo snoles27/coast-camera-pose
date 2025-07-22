@@ -21,11 +21,17 @@ if __name__ == "__main__":
 
 
     
-    r, q = match_frames.run_unconstrained()
+    r, q = match_frames.run_unconstrained(max_iterations=200)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # match_frames.plot_results(r, q, ax=ax)
+    # plt.show()  
+
     fig = plt.figure()
-    ax = plt.add_subplot(111)
-    match_frames.plot_results(r, q, ax=ax)
-    plt.show()  
+    ax = fig.add_subplot(111, projection='3d')
+    lc.plot_camera_location_orientation(r, q, ax=ax)
+    geo_curves[0].plot(ax=ax)
+    plt.show()
 
     ## OLD HOLD
 
