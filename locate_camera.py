@@ -48,7 +48,6 @@ class Camera:
         r_poi_cam_cam_norm = quaternion.rotate_vectors(q, np.atleast_2d(r_poi_cam_ecef_norm))[0]
         r_poi_cam_cam_norm = r_poi_cam_cam_norm.flatten()
         x, y, z = r_poi_cam_cam_norm
-        print(f"{r_poi_cam_cam_norm=}")
         # Only return if point is in front of the camera (x < 0)
         if x>=0:
             return None
@@ -200,6 +199,8 @@ class Curve:
         Returns:
             np.ndarray: The center of mass as a 1D array of shape (dim,)
         """
+        
+        print(f"{self.points=}")
         pts = np.array(self.points)
         if len(pts) == 0:
             raise ValueError("Curve has no points.")
