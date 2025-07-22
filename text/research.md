@@ -33,3 +33,8 @@ where N+1 points on the curve are compared
 ## Other things that could improve this idea
 - Encoding the curves differently (constrain the point and the slope at each point (eh harder to extract from coastlines and edge detected images))
 - Interpolating the curve encoding with higher order interpolation between the points (if still using the point based representation)
+
+
+## Resources
+
+https://docs.scipy.org/doc/scipy/tutorial/optimize.html#constrained-minimization
