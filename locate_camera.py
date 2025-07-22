@@ -16,28 +16,48 @@ class Camera:
     """
 
     def __init__(self, fov, res):
-        self.fov = fov  #intialize camera field of veiw attribute (in radians)
-        self.res = res  #intialize camera resolution attribute (np array 2x1 wxh in pixel count)
+        """
+        Initialize camera with field of view and resolution.
+        
+        Args:
+            fov: float, field of view in radians
+            res: np.ndarray, shape (2,), resolution [width, height] in pixels
+        """
+        self.fov = fov  # initialize camera field of view attribute (in radians)
+        self.res = res  # initialize camera resolution attribute (np array 2x1 wxh in pixel count)
         self.aspect_ratio = res[0]/res[1]
-        #will eventually initialize camera parameters to convert between image and ideal pinhole camera
+        # will eventually initialize camera parameters to convert between image and ideal pinhole camera
 
     def raw_photo_to_ideal_pinhole(self, point):
         """
-        take point as taken by camera and convert to point location if it was taken with an ideal pinhole camera
-        Pinhole camera coordinates use 0,0 at the center of the frame with the width normalized to 1
+        Take point as taken by camera and convert to point location if it was taken with an ideal pinhole camera.
+        Pinhole camera coordinates use 0,0 at the center of the frame with the width normalized to 1.
+        
+        Args:
+            point: np.ndarray, shape (2,), pixel coordinates [x, y]
+            
+        Returns:
+            np.ndarray, shape (2,), normalized pinhole coordinates [x_norm, y_norm] in range [-0.5, 0.5]
         """
         return np.array([
             (point[0] - self.res[0]/2)/self.res[0],
             (point[1] - self.res[1]/2)/self.res[0]
-        ]) #assuming camera is pinhole for now, really just a placeholder till I can get a better camera model going
+        ]) # assuming camera is pinhole for now, really just a placeholder till I can get a better camera model going
     
     def poi_to_pinhole_projection(self, point, r, q):
         """
         Take a point in 3D cartesian space and project it to an ideal pinhole camera with 
-        focal point at location r and camera orentaion encoded with quaternion q
-        quaternion q represents the rotation from ECEF to the camera frame
-        return location of with width normalized to 1
-        return none if the point of interest is not within the camera field of view
+        focal point at location r and camera orientation encoded with quaternion q.
+        Quaternion q represents the rotation from ECEF to the camera frame.
+        
+        Args:
+            point: np.ndarray, shape (3,), 3D point in ECEF coordinates [x, y, z]
+            r: np.ndarray, shape (3,), camera position in ECEF coordinates [x, y, z]
+            q: quaternion object, camera orientation quaternion (ECEF to camera frame)
+            
+        Returns:
+            np.ndarray, shape (2,), normalized pinhole coordinates [y_norm, z_norm] in range [-0.5, 0.5]
+            OR [OUT_OF_FRAME_VALUE, OUT_OF_FRAME_VALUE] if point is not visible
         """
 
         #generate the point from the camera focal point to the point of interest
@@ -62,12 +82,15 @@ class Camera:
 
 class Curve: 
     """
-    Class to represent a curve. The only attributes are the points that define the curve. The points can be either 2D or 3D
-    This class has a variety of functions to manipulate the curves
+    Class to represent a curve. The only attributes are the points that define the curve. 
+    The points can be either 2D or 3D.
+    This class has a variety of functions to manipulate the curves.
     This class should also include read and write functions to store the point data in simple files. 
     
+    Attributes:
+        points: list of np.ndarray, each shape (2,) or (3,) for 2D or 3D points respectively
+    
     Example file format: 
-
     #Description
     1.0, 2.0, 3.0
     3.123, 7.234, 8.45
@@ -75,21 +98,56 @@ class Curve:
     """
 
     def __init__(self):
+        """
+        Initialize empty curve.
+        
+        Attributes:
+            points: list, initially empty, will contain np.ndarray objects
+        """
         self.points = []
 
     @classmethod
     def from_points(cls, points):
         """
-        Generate Curve instance by providing a list of numpy arrays representing the points. The points can be 2 or 3 dimensional
+        Generate Curve instance by providing a list of numpy arrays representing the points.
+        The points can be 2 or 3 dimensional.
+        
+        Args:
+            points: list of np.ndarray, each shape (2,) or (3,) for 2D or 3D points respectively
+            
+        Returns:
+            Curve: new Curve instance with the provided points
+            
+        Raises:
+            ValueError: if points have inconsistent dimensions
         """
         obj = cls()
+        if not points:
+            return obj
+            
+        # Check that all points have the same dimension
+        first_dim = len(points[0])
+        for i, p in enumerate(points):
+            if len(p) != first_dim:
+                raise ValueError(f"Point {i} has dimension {len(p)}, expected {first_dim}")
+        
         obj.points = [np.array(p) for p in points]
         return obj
 
     @classmethod
     def from_file(cls, file_path):
         """
-        Generate Curve instance by reading a file with a list of points 
+        Generate Curve instance by reading a file with a list of points.
+        
+        Args:
+            file_path: str, path to file containing point data
+            
+        Returns:
+            Curve: new Curve instance with points from file
+            
+        File format:
+            Lines starting with # are comments
+            Each non-comment line contains comma-separated coordinates
         """
         points = []
         with open(file_path, 'r') as f:
@@ -103,7 +161,10 @@ class Curve:
 
     def to_file(self, file_path):
         """
-        Write the points in the curve to a file
+        Write the points in the curve to a file.
+        
+        Args:
+            file_path: str, path to output file
         """
         with open(file_path, 'w') as f:
             f.write("#Curve points\n")
@@ -112,9 +173,17 @@ class Curve:
 
     def get_point_along_curve(self, parameter, k=1):
         """
-        Generate an interpolated point along the curve
-        parameter: input from [0,1] indicating what point to extract along the length of the curve
-        k: default = 1. Order of spline to interpolate the curve with. Default is linear interpolation
+        Generate an interpolated point along the curve.
+        
+        Args:
+            parameter: float, input from [0,1] indicating what point to extract along the length of the curve
+            k: int, default=1, order of spline to interpolate the curve with. Default is linear interpolation
+            
+        Returns:
+            np.ndarray, shape (2,) or (3,), interpolated point coordinates
+            
+        Raises:
+            ValueError: if curve has no points, insufficient points, or parameter out of range
         """
 
         if not self.points:
@@ -205,9 +274,12 @@ class Curve:
         Compute the center of mass of the curve, assuming linear interpolation between points.
         The center of mass is calculated as the weighted average of the midpoints of each segment,
         weighted by the segment length.
-        If there is only one point, return that point as the center of mass.
+        
         Returns:
-            np.ndarray: The center of mass as a 1D array of shape (dim,)
+            np.ndarray, shape (2,) or (3,), the center of mass coordinates
+            
+        Raises:
+            ValueError: if curve has no points
         """
         
         pts = np.array(self.points)
@@ -216,34 +288,43 @@ class Curve:
         if len(pts) == 1:
             return pts[0]
         # Compute segment midpoints and lengths
-        seg_starts = pts[:-1]
-        seg_ends = pts[1:]
-        midpoints = (seg_starts + seg_ends) / 2
-        lengths = np.linalg.norm(seg_ends - seg_starts, axis=1)
+        seg_starts = pts[:-1]  # Shape: (N-1, dim)
+        seg_ends = pts[1:]     # Shape: (N-1, dim)
+        midpoints = (seg_starts + seg_ends) / 2  # Shape: (N-1, dim)
+        lengths = np.linalg.norm(seg_ends - seg_starts, axis=1)  # Shape: (N-1,)
         total_length = np.sum(lengths)
         if total_length == 0:
             # All points are coincident; return the first point
             return pts[0]
         # Weighted average of midpoints
-        center = np.average(midpoints, axis=0, weights=lengths)
+        center = np.average(midpoints, axis=0, weights=lengths)  # Shape: (dim,)
         return center
     
     def project_to_camera(self, camera, r, q):
         """
-        Return a new curve object that is the object projected do a 2D curve using the camera object
-        camera: camera object representing camera doing the projecting
-        r: location of camera
-        q: orientation of camera in quaternion representation (rotation from ECEF to camera frame)
+        Return a new curve object that is the object projected to a 2D curve using the camera object.
+        
+        Args:
+            camera: Camera object representing camera doing the projecting
+            r: np.ndarray, shape (3,), location of camera in ECEF coordinates
+            q: quaternion object, orientation of camera (rotation from ECEF to camera frame)
+            
+        Returns:
+            Curve: new 2D curve with projected points
+            
+        Raises:
+            ValueError: if the points of self are not 3D
         """
-        #enfore that the points of self are 3D, or raise error
+        # enforce that the points of self are 3D, or raise error
         if len(self.points[0]) != 3:
             raise ValueError("Points must be 3D")
 
-        #call camera.poi_to_pinhole_projection for each point in self
-        #return a new curve object with the projected points
+        # call camera.poi_to_pinhole_projection for each point in self
+        # return a new curve object with the projected points
         new_points = []
         for point in self.points:
-            new_points.append(camera.poi_to_pinhole_projection(point, r, q))
+            projected_point = camera.poi_to_pinhole_projection(point, r, q)
+            new_points.append(projected_point)
         return Curve.from_points(new_points)
 
 class MatchFrames:
