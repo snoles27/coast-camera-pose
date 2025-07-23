@@ -33,7 +33,6 @@ if __name__ == "__main__":
     ]
     q = quaternion.from_float_array(q_array)
     cam = lc.Camera(fov=np.pi/2, res=[100,100])
-
     #test
     geo_points = lc.Curve.from_file("frames/test_frame_1/curveA_geo_ecef")
     cam_points = lc.Curve.from_file("frames/test_frame_1/curveA_photo_pinhole")

@@ -609,13 +609,29 @@ def plot_camera_location_orientation(r, q, ax=None):
     return ax
     
 if __name__ == "__main__":
+
+
+    #generate the coordinate rotation 
+    phi = np.pi/6
+    u = [0,1,0]
+    q_array = [
+        np.cos(phi/2),
+        np.sin(phi/2)*u[0],
+        np.sin(phi/2)*u[1],
+        np.sin(phi/2)*u[2]
+    ]
+    qi = quaternion.from_float_array(q_array)
+
+    d = 300e3 #meters
+    Re = np.linalg.norm(np.array([5584.698255, 6356749.877461]))
+    ri = Re*np.array([0,0,1]) + d * np.array([1,0,1])
     
     photo_curves = [Curve.from_file("frames/test_frame_1/curveA_photo_pinhole")]
     geo_curves = [Curve.from_file("frames/test_frame_1/curveA_geo_ecef")]
 
     camera = Camera(fov=np.pi/2, res=(1024, 1024)) #resolution doesn't really matter for this example (I think)
     match_frames = MatchFrames(photo_curves, geo_curves, camera)
-    match_frames.auto_initial_r_q()
+    match_frames.set_initial_r_q(ri, qi)
 
    
     # fig = plt.figure()
