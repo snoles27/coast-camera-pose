@@ -8,7 +8,7 @@ from scipy.optimize import minimize
 from pyproj import Transformer
 import matplotlib.pyplot as plt
 
-OUT_OF_FRAME_VALUE = 3
+OUT_OF_FRAME_VALUE = 5
 
 class Camera:
     """
@@ -26,6 +26,7 @@ class Camera:
         self.fov = fov  # initialize camera field of view attribute (in radians)
         self.res = res  # initialize camera resolution attribute (np array 2x1 wxh in pixel count)
         self.aspect_ratio = res[0]/res[1]
+        self.f = 0.5/np.tan(fov/2) #set the focual length such that the image is 1 unit wide
         # will eventually initialize camera parameters to convert between image and ideal pinhole camera
 
     def raw_photo_to_ideal_pinhole(self, point):
@@ -67,18 +68,12 @@ class Camera:
         # Ensure input is 2D shape (N, 3) for quaternion.rotate_vectors, even if single vector
         r_poi_cam_cam_norm = quaternion.rotate_vectors(q, np.atleast_2d(r_poi_cam_ecef_norm))[0]
         r_poi_cam_cam_norm = r_poi_cam_cam_norm.flatten()
-        x, y, z = r_poi_cam_cam_norm
+        r_x, r_y, r_z = r_poi_cam_cam_norm
         # Only return if point is in front of the camera (x < 0)
-        if x>=0:
-            return [OUT_OF_FRAME_VALUE, OUT_OF_FRAME_VALUE]
-        #only return if point is in the horozontal (y) FOV
-        # if abs(y)>np.sin(self.fov/2):
-        #     return None
-        # #only return if point is in the vertical (z) FOV
-        # if abs(z)>np.sin(self.fov/2)/self.aspect_ratio:
-        #     return None
-        #convert to pinhole camera convention and return
-        return np.array([y/2,z/2])
+        if r_x>=0:
+            return [np.inf, np.inf]
+        
+        return np.array([-r_y/r_x * self.f, -r_z/r_x * self.f])
 
 class Curve: 
     """
@@ -201,7 +196,7 @@ class Curve:
         pt_interp = splev(parameter, tck)
         return np.array(pt_interp)
 
-    def plot(self, k=1, show=True, ax=None, num_samples=100, **plot_kwargs):
+    def plot(self, k=1, show=True, ax=None, num_samples=100, label="", **plot_kwargs):
         """
         Plot the curve using matplotlib.
         k: spline order (default=1, linear)
@@ -216,15 +211,6 @@ class Curve:
         pts = np.array(self.points)
         if pts.shape[0] < 2:
             raise ValueError("Need at least two points to plot a curve.")
-
-        # For 2D plots, remove points that match OUT_OF_FRAME
-        if pts.shape[1] == 2:
-
-            # Keep only points that are not OUT_OF_FRAME_VALUE in any coordinate
-            mask = ~np.any(pts == OUT_OF_FRAME_VALUE, axis=1)
-            pts = pts[mask]
-            if pts.shape[0] < 2:
-                raise ValueError("Not enough in-frame points to plot a 2D curve.")
 
 
         # Determine if curve is 2D or 3D
@@ -248,16 +234,16 @@ class Curve:
         if is_3d:
             # 3D plotting
             x_fine, y_fine, z_fine = interp_pts
-            ax.plot(pts[:,0], pts[:,1], pts[:,2], 'ro', label='Original Points')
-            ax.plot(x_fine, y_fine, z_fine, 'b-', label=f'Spline Curve (k={k})', **plot_kwargs)
+            ax.plot(pts[:,0], pts[:,1], pts[:,2], 'ro', label=label+' (points)')
+            ax.plot(x_fine, y_fine, z_fine, 'b-', label=label + f' curve (k={k})', **plot_kwargs)
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
         else:
             # 2D plotting (Y,Z frame)
             y_fine, z_fine = interp_pts  # 2D points are in Y,Z
-            ax.plot(pts[:,0], pts[:,1], 'ro', label='Original Points')  # pts[:,0]=Y, pts[:,1]=Z
-            ax.plot(y_fine, z_fine, 'b-', label=f'Spline Curve (k={k})', **plot_kwargs)
+            ax.plot(pts[:,0], pts[:,1], 'ro', label=label+' (points)')  # pts[:,0]=Y, pts[:,1]=Z
+            ax.plot(y_fine, z_fine, 'b-', label=label + f' curve (k={k})', **plot_kwargs)
             ax.set_xlabel('Y')
             ax.set_ylabel('Z')
 
@@ -458,7 +444,6 @@ class MatchFrames:
         def cost(x):
             return self.curve_difference_cost(x[0:3], x[3:7]/np.linalg.norm(x[3:7]), N, k) + penatly_factor * np.linalg.norm(x[3:7])
         return cost
-
     
     def run_unconstrained(self, spline_order=1, number_samples=20, penatly_factor=100, max_iterations=1000):
         """
@@ -481,13 +466,22 @@ class MatchFrames:
         
         # run the coarse optimization first on the center of masses
         x0 = self.get_inital_x()
-        res = minimize(
+        res_initial = minimize(
             com_objective,
             x0,
             method='Nelder-Mead',
             options={'maxiter': max_iterations}
         )
+        print(f"Completed course optimization with result {res_initial.x=}, {res_initial.success=}")
         # run the full optimization on the curves with the solution to the center of mass optimization as the initial condition
+        x0 = res_initial.x
+        res = minimize(
+            curve_objective,
+            x0,
+            method='Nelder-Mead',
+            options={'maxiter': max_iterations}
+        )
+        print(f"Completed optimization with result {res_initial.x=}, {res_initial.success=}")
 
         # return r and q solutions
         return res.x[0:3], quaternion.from_float_array(res.x[3:7])
@@ -504,11 +498,12 @@ class MatchFrames:
         #plot the projected geo curves
         projected_geo_curves = [curve.project_to_camera(self.camera, r, q) for curve in self.geo_curves]
         for projected_geo_curve in projected_geo_curves:
-            projected_geo_curve.plot(ax=ax)
+            projected_geo_curve.plot(ax=ax, show=False, label = "geo")
         
         #plot the photo curves
         for photo_curve in self.photo_curves:
-            photo_curve.plot(ax=ax)
+            print(photo_curve)
+            photo_curve.plot(ax=ax, show=False, label="photo")
         
         return ax
             

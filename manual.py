@@ -22,10 +22,10 @@ if __name__ == "__main__":
 
     
     r, q = match_frames.run_unconstrained(max_iterations=200)
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111)
-    # match_frames.plot_results(r, q, ax=ax)
-    # plt.show()  
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    match_frames.plot_results(r, q, ax=ax)
+    plt.show()  
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
