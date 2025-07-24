@@ -7,20 +7,16 @@ import matplotlib.pyplot as plt
 if __name__ == "__main__":
     
     theta_deg = 0.05
-    d = 100e3 #meters
+    d = 20e3 #meters
     Re = np.linalg.norm(np.array([5584.698255, 6356749.877461]))
     r_cam_ecef = Re*np.array([0,0,1]) + d * np.array([1,0,1])
-    # z = Re * np.cos(theta_deg * np.pi/180)
-    # r = Re * np.sin(theta_deg * np.pi/180)
+    z = Re * np.cos(theta_deg * np.pi/180)
+    r = Re * np.sin(theta_deg * np.pi/180)
 
-    # points_ecef = [
-    #     np.array([r,0,z]),
-    #     np.array([0,r,z]),
-    #     np.array([-r,0,z]),
-    #     np.array([0,-r,z])
-    # ]
+    points_ecef = [np.array([r*np.cos(phi),r*np.sin(phi),z]) for phi in np.linspace(0, np.pi/2, 5)]
+    print(points_ecef)
 
-    # poi_curve = lc.Curve.from_points(points_ecef)
+    poi_curve = lc.Curve.from_points(points_ecef)
 
     #generate the coordinate rotation 
     phi = np.pi/4
@@ -33,14 +29,26 @@ if __name__ == "__main__":
     ]
     q = quaternion.from_float_array(q_array)
     cam = lc.Camera(fov=np.pi/2, res=[100,100])
+
+    poi_curve_from_camera = poi_curve.project_to_camera(cam, r_cam_ecef, q)
+    poi_curve_from_camera.to_file("frames/test_frame_1/curveB_photo_pinhole")
+    
     #test
-    geo_points = lc.Curve.from_file("frames/test_frame_1/curveA_geo_ecef")
-    cam_points = lc.Curve.from_file("frames/test_frame_1/curveA_photo_pinhole")
+    geo_points = lc.Curve.from_file("frames/test_frame_1/curveB_geo_ecef")
+    cam_points = lc.Curve.from_file("frames/test_frame_1/curveB_photo_pinhole")
 
     geo_points_transform = geo_points.project_to_camera(cam, r_cam_ecef, q)
 
+    fig =  plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    geo_points.plot(ax=ax, show=False)
+    lc.visualize_camera_model(cam, r_cam_ecef, q, ax=ax, show_fov=False, axis_length=5000)
+    lc.ensure_equal_aspect_3d(ax)
+    plt.show()
+
     fig = plt.figure()
     ax = fig.add_subplot(111)
+    ax.set_aspect('equal')
     cam_points.plot(k=2, show=False, ax=ax)
     geo_points_transform.plot(show=False,ax=ax)
     plt.show()
@@ -48,12 +56,7 @@ if __name__ == "__main__":
 
     ## OLD HOLD
 
-    # cam = lc.Camera(fov=np.pi/2, res=[100,100])
-
-    # poi_curve_from_camera = poi_curve.project_to_camera(cam, r_cam_ecef, q)
-    # print(poi_curve_from_camera)
-    # poi_curve_from_camera.plot()
-    # poi_curve_from_camera.to_file("frames/test_frame_1/curveA_photo_pinhole")
+  
 
     #  for i, curve in enumerate(match_frames.photo_curves):
     #     dims = [p.shape for p in curve.points]

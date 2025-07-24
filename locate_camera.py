@@ -213,11 +213,19 @@ class Curve:
     def plot(self, k=1, show=True, ax=None, num_samples=100, label="", **plot_kwargs):
         """
         Plot the curve using matplotlib.
-        k: spline order (default=1, linear)
-        show: whether to call plt.show() (default True)
-        ax: optional matplotlib axis to plot on (2D or 3D)
-        num_samples: number of points to sample along the curve
-        plot_kwargs: additional keyword arguments for ax.plot
+        
+        Args:
+            k: int, default=1, spline order (default=1, linear)
+            show: bool, default=True, whether to call plt.show()
+            ax: matplotlib.axes.Axes, optional, axis to plot on (2D or 3D)
+            num_samples: int, default=100, number of points to sample along the curve
+            plot_kwargs: dict, additional keyword arguments for ax.plot
+            
+        Returns:
+            matplotlib.axes.Axes: the axis object used for plotting
+            
+        Raises:
+            ValueError: if curve has no points or insufficient points
         """
 
         if not self.points:
@@ -253,6 +261,7 @@ class Curve:
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
+            
         else:
             # 2D plotting (Y,Z frame)
             y_fine, z_fine = interp_pts  # 2D points are in Y,Z
@@ -575,7 +584,6 @@ def visualize_camera_model(camera, r, q, ax=None, show_fov=True, fov_samples=20,
         show_fov (bool): Whether to show the field of view cone
         fov_samples (int): Number of points to sample along FOV cone edges
         axis_length (float): Length of camera coordinate axes in meters
-
     Returns:
         ax: The matplotlib 3D axes with the camera model plotted.
     """
@@ -676,13 +684,6 @@ def visualize_camera_model(camera, r, q, ax=None, show_fov=True, fov_samples=20,
               fontsize=12, verticalalignment='top',
               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
-    # Optionally, set equal aspect ratio for better visualization
-    try:
-        # This works for matplotlib >= 3.3
-        ax.set_box_aspect([1,1,1])
-    except Exception:
-        pass
-
     # Set axis labels
     ax.set_xlabel('X (ECEF) [m]')
     ax.set_ylabel('Y (ECEF) [m]')
@@ -697,6 +698,45 @@ def visualize_camera_model(camera, r, q, ax=None, show_fov=True, fov_samples=20,
     ax.set_title('Camera Model Visualization', fontsize=14, fontweight='bold')
 
     return ax
+
+def ensure_equal_aspect_3d(ax):
+    """
+    Ensure equal aspect ratio for a 3D matplotlib plot.
+    
+    Args:
+        ax (mpl_toolkits.mplot3d.Axes3D): The 3D axes to fix
+        
+    This function forces all axes to have the same scale, preventing
+    circles from appearing as ellipses.
+    """
+    # Try the modern method first
+    try:
+        ax.set_box_aspect([1,1,1])
+    except Exception:
+        pass
+    
+    # Force equal scaling by setting limits manually
+    x_limits = ax.get_xlim()
+    y_limits = ax.get_ylim()
+    z_limits = ax.get_zlim()
+    
+    # Find the maximum range across all axes
+    x_range = x_limits[1] - x_limits[0]
+    y_range = y_limits[1] - y_limits[0]
+    z_range = z_limits[1] - z_limits[0]
+    max_range = max(x_range, y_range, z_range)
+    
+    # Calculate centers of each axis
+    x_center = (x_limits[0] + x_limits[1]) / 2
+    y_center = (y_limits[0] + y_limits[1]) / 2
+    z_center = (z_limits[0] + z_limits[1]) / 2
+    
+    # Set equal limits for all axes
+    half_range = max_range / 2
+    ax.set_xlim(x_center - half_range, x_center + half_range)
+    ax.set_ylim(y_center - half_range, y_center + half_range)
+    ax.set_zlim(z_center - half_range, z_center + half_range)
+
     
 if __name__ == "__main__":
 
@@ -712,7 +752,7 @@ if __name__ == "__main__":
     ]
     qi = quaternion.from_float_array(q_array)
 
-    d = 300e3 #meters
+    d = 50e3 #meters
     Re = np.linalg.norm(np.array([5584.698255, 6356749.877461]))
     ri = Re*np.array([0,0,1]) + d * np.array([1,0,1])
     
@@ -720,8 +760,15 @@ if __name__ == "__main__":
     geo_curves = [Curve.from_file("frames/test_frame_1/curveA_geo_ecef")]
 
     camera = Camera(fov=np.pi/2, res=(1024, 1024)) #resolution doesn't really matter for this example (I think)
-    match_frames = MatchFrames(photo_curves, geo_curves, camera)
-    match_frames.set_initial_r_q(ri, qi)
+    # match_frames = MatchFrames(photo_curves, geo_curves, camera)
+    # match_frames.set_initial_r_q(ri, qi)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_box_aspect([1, 1, 1])
+    visualize_camera_model(camera, ri, qi, ax=ax)
+    geo_curves[0].plot(ax=ax)    
+    plt.show()
 
    
     # fig = plt.figure()
@@ -732,17 +779,17 @@ if __name__ == "__main__":
 
 
     
-    r, q = match_frames.run_unconstrained(max_iterations=200)
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    match_frames.plot_results(r, q, ax=ax)
-    plt.show()  
+    # r, q = match_frames.run_unconstrained(max_iterations=200)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # match_frames.plot_results(r, q, ax=ax)
+    # plt.show()  
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    visualize_camera_model(camera, r, q, ax=ax)
-    geo_curves[0].plot(ax=ax)
-    plt.show()
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # visualize_camera_model(camera, r, q, ax=ax)
+    # geo_curves[0].plot(ax=ax)
+    # plt.show()
 
 
 
