@@ -560,6 +560,8 @@ def curve_difference_cost_2d(curve1, curve2, N, k, plot=False):
         sampled_point_curve2 = curve2.get_point_along_curve(p, k=k)
 
         displacement = sampled_point_curve2 - sampled_point_curve1
+        displacement = np.where(np.isnan(displacement), np.inf, displacement)
+        print(f"{displacement=}")
 
         if plot:
             displacements.append(displacement)
@@ -577,8 +579,8 @@ def curve_difference_cost_2d(curve1, curve2, N, k, plot=False):
         fig, ax = plt.subplots(figsize=(10, 8))
         
         # Plot both curves
-        curve1.plot(ax=ax, show=False, color='blue', label='Curve 1', linewidth=2)
-        curve2.plot(ax=ax, show=False, color='red', label='Curve 2', linewidth=2)
+        curve1.plot(ax=ax, show=False, color='blue', label='Curve 1', linewidth=2, k=k)
+        curve2.plot(ax=ax, show=False, color='red', label='Curve 2', linewidth=2, k=k)
         
         # Convert to numpy arrays for easier plotting
         points1 = np.array(sampled_points1)
@@ -843,8 +845,8 @@ if __name__ == "__main__":
     geo_curves = [Curve.from_file("frames/test_frame_1/curveA_geo_ecef")]
 
     camera = Camera(fov=np.pi/2, res=(1024, 1024)) #resolution doesn't really matter for this example (I think)
-    # match_frames = MatchFrames(photo_curves, geo_curves, camera)
-    # match_frames.set_initial_r_q(ri, qi)
+    match_frames = MatchFrames(photo_curves, geo_curves, camera)
+    match_frames.set_initial_r_q(ri, qi)
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -854,25 +856,24 @@ if __name__ == "__main__":
     plt.show()
 
    
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # plot_camera_location_orientation(match_frames.initial_r, match_frames.initial_q, ax=ax)
-    # geo_curves[0].plot(ax=ax)
-    # plt.show()
-
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    visualize_camera_model(camera, match_frames.initial_r, match_frames.initial_q, ax=ax)
+    geo_curves[0].plot(ax=ax)
+    plt.show()
 
     
-    # r, q = match_frames.run_unconstrained(max_iterations=200)
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111)
-    # match_frames.plot_results(r, q, ax=ax)
-    # plt.show()  
+    r, q = match_frames.run_unconstrained(max_iterations=200)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    match_frames.plot_results(r, q, ax=ax)
+    plt.show()  
 
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # visualize_camera_model(camera, r, q, ax=ax)
-    # geo_curves[0].plot(ax=ax)
-    # plt.show()
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    visualize_camera_model(camera, r, q, ax=ax)
+    geo_curves[0].plot(ax=ax)
+    plt.show()
 
 
 
