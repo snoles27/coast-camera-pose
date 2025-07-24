@@ -168,15 +168,19 @@ class Curve:
                 points.append(np.array(parts))
         return cls.from_points(points)
 
-    def to_file(self, file_path):
+    def to_file(self, file_path, description=None):
         """
         Write the points in the curve to a file.
         
         Args:
             file_path: str, path to output file
+            description: str, optional, custom description to write as header comment
         """
         with open(file_path, 'w') as f:
-            f.write("#Curve points\n")
+            if description:
+                f.write(f"# {description}\n")
+            else:
+                f.write("#Curve points\n")
             for pt in self.points:
                 f.write(', '.join(str(x) for x in pt) + '\n')
 
@@ -210,7 +214,7 @@ class Curve:
         pt_interp = splev(parameter, tck)
         return np.array(pt_interp)
 
-    def plot(self, k=1, show=True, ax=None, num_samples=100, label="", **plot_kwargs):
+    def plot(self, k=1, show=True, ax=None, num_samples=100, label="", color='blue', **plot_kwargs):
         """
         Plot the curve using matplotlib.
         
@@ -219,6 +223,8 @@ class Curve:
             show: bool, default=True, whether to call plt.show()
             ax: matplotlib.axes.Axes, optional, axis to plot on (2D or 3D)
             num_samples: int, default=100, number of points to sample along the curve
+            label: str, default="", label for the plot
+            color: str, default='blue', color for both points and curve
             plot_kwargs: dict, additional keyword arguments for ax.plot
             
         Returns:
@@ -256,8 +262,8 @@ class Curve:
         if is_3d:
             # 3D plotting
             x_fine, y_fine, z_fine = interp_pts
-            ax.plot(pts[:,0], pts[:,1], pts[:,2], 'ro', label=label+' (points)')
-            ax.plot(x_fine, y_fine, z_fine, 'b-', label=label + f' curve (k={k})', **plot_kwargs)
+            ax.plot(pts[:,0], pts[:,1], pts[:,2], 'o', color=color, label=label+' (points)')
+            ax.plot(x_fine, y_fine, z_fine, '-', color=color, label=label + f' curve (k={k})', **plot_kwargs)
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
@@ -265,8 +271,8 @@ class Curve:
         else:
             # 2D plotting (Y,Z frame)
             y_fine, z_fine = interp_pts  # 2D points are in Y,Z
-            ax.plot(pts[:,0], pts[:,1], 'ro', label=label+' (points)')  # pts[:,0]=Y, pts[:,1]=Z
-            ax.plot(y_fine, z_fine, 'b-', label=label + f' curve (k={k})', **plot_kwargs)
+            ax.plot(pts[:,0], pts[:,1], 'o', color=color, label=label+' (points)')  # pts[:,0]=Y, pts[:,1]=Z
+            ax.plot(y_fine, z_fine, '-', color=color, label=label + f' curve (k={k})', **plot_kwargs)
             ax.set_xlabel('Y')
             ax.set_ylabel('Z')
 
@@ -427,12 +433,7 @@ class MatchFrames:
         for index, _ in enumerate(self.photo_curves):
             projected_geo_curve = self.geo_curves[index].project_to_camera(self.camera, r, q)
 
-            cost = 0
-            for p in np.linspace(0, 1, N):
-                sampled_photo_point = self.photo_curves[index].get_point_along_curve(p,k=k)
-                sampled_geo_point = projected_geo_curve.get_point_along_curve(p,k=k)
-                cost += np.linalg.norm(sampled_photo_point - sampled_geo_point)
-            cost /= N
+            cost = curve_difference_cost_2d(self.photo_curves[index], projected_geo_curve, N, k)
             total_cost += cost
         return total_cost
 
@@ -536,6 +537,18 @@ class MatchFrames:
             photo_curve.plot(ax=ax, show=False, label="photo")
         
         return ax
+
+def curve_difference_cost_2d(curve1, curve2, N, k):
+    """
+    Cost function for 2D curves
+    """
+    cost = 0
+    for p in np.linspace(0, 1, N):
+        sampled_point_curve1= curve1.get_point_along_curve(p,k=k)
+        sampled_point_curve2= curve2.get_point_along_curve(p,k=k)
+        cost += np.linalg.norm(sampled_point_curve1 - sampled_point_curve2)
+    cost /= N
+    return cost
             
 def file_latlong_to_ecef(filename): 
     """
