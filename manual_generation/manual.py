@@ -1,10 +1,12 @@
 import quaternion
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import locate_camera as lc
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use("TkAgg")
-import os
 
 MOVE_WINDOW_STR="+1800+0"
 
@@ -51,7 +53,7 @@ if __name__ == "__main__":
     for idx, projected_curve in enumerate(projected_curves):
         # Use the curve_difference_cost_2d function directly
         # Parameters: N=20 sample points, k=1 (linear interpolation)
-        curve_cost = lc.curve_difference_cost_2d(correct_curve, projected_curve, N=20, k=1)
+        curve_cost = lc.curve_difference_cost_2d(correct_curve, projected_curve, N=20, k=2, plot=True)
         curve_costs.append(curve_cost)
         
         print(f"{curve_indices[idx]:5d} | {curve_cost:14.4f}")

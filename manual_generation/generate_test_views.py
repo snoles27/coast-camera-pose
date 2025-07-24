@@ -1,10 +1,12 @@
 import quaternion
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import locate_camera as lc
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use("TkAgg")
-import os
 
 MOVE_WINDOW_STR="+1800+0"
 

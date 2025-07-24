@@ -538,16 +538,86 @@ class MatchFrames:
         
         return ax
 
-def curve_difference_cost_2d(curve1, curve2, N, k):
+def curve_difference_cost_2d(curve1, curve2, N, k, plot=False):
     """
     Cost function for 2D curves
+    
+    Args:
+        curve1: First 2D curve
+        curve2: Second 2D curve  
+        N: Number of sample points along the curves
+        k: Spline order for interpolation
+        plot: bool, whether to plot visualization of the cost calculation
     """
     cost = 0
+    if plot:
+        sampled_points1 = []
+        sampled_points2 = []
+        displacements = []
+        
     for p in np.linspace(0, 1, N):
-        sampled_point_curve1= curve1.get_point_along_curve(p,k=k)
-        sampled_point_curve2= curve2.get_point_along_curve(p,k=k)
-        cost += np.linalg.norm(sampled_point_curve1 - sampled_point_curve2)
+        sampled_point_curve1 = curve1.get_point_along_curve(p, k=k)
+        sampled_point_curve2 = curve2.get_point_along_curve(p, k=k)
+
+        displacement = sampled_point_curve2 - sampled_point_curve1
+
+        if plot:
+            displacements.append(displacement)
+            sampled_points1.append(sampled_point_curve1)
+            sampled_points2.append(sampled_point_curve2)
+        
+        cost += np.linalg.norm(displacement)
+    
     cost /= N
+    
+    # Visualization
+    if plot:
+        import matplotlib.pyplot as plt
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Plot both curves
+        curve1.plot(ax=ax, show=False, color='blue', label='Curve 1', linewidth=2)
+        curve2.plot(ax=ax, show=False, color='red', label='Curve 2', linewidth=2)
+        
+        # Convert to numpy arrays for easier plotting
+        points1 = np.array(sampled_points1)
+        points2 = np.array(sampled_points2)
+        displacements = np.array(displacements)
+        
+        # Plot sampled points
+        ax.plot(points1[:, 0], points1[:, 1], 'bo', markersize=6, label='Curve 1 samples')
+        ax.plot(points2[:, 0], points2[:, 1], 'ro', markersize=6, label='Curve 2 samples')
+
+        # Get the xlimits of the plot to set the arrow head size
+        xlim = ax.get_xlim()
+        x_range = abs(xlim[1] - xlim[0])
+        arrow_head_width = 0.02 * x_range
+        
+        # Plot displacement vectors
+        for i, (p1, p2, disp) in enumerate(zip(points1, points2, displacements)):
+            # Draw arrow from curve1 point to curve2 point
+            ax.arrow(p1[0], p1[1], disp[0], disp[1], 
+                    head_width=arrow_head_width, head_length=arrow_head_width, fc='green', ec='green', alpha=0.7)
+            
+            # Add magnitude label
+            mag = np.linalg.norm(disp)
+            mid_x = (p1[0] + p2[0]) / 2
+            mid_y = (p1[1] + p2[1]) / 2
+            ax.text(mid_x, mid_y, f'{mag:.3f}', fontsize=8, ha='center', va='bottom')
+        
+        ax.set_title(f'2D Curve Cost Visualization (Total Cost: {cost:.4f})')
+        ax.set_xlabel('Y')
+        ax.set_ylabel('Z')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Ensure equal aspect ratio
+        ax.set_aspect('equal')
+        
+        plt.tight_layout()
+        plt.show()
+    
     return cost
             
 def file_latlong_to_ecef(filename): 
