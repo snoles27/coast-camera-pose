@@ -6,6 +6,7 @@ import os
 import sys
 import matplotlib.pyplot as plt
 import locate_camera as lc
+from mpl_toolkits.mplot3d import Axes3D
 
 # Check for visualization using environment variable
 VISUALIZE = os.environ.get('VISUALIZE', 'false').lower() == 'true'
@@ -58,17 +59,19 @@ def test_poi_to_pinhole_projection_out_of_view():
     # Point behind the camera
     pt = np.array([1, 0, 0])
     result = cam.poi_to_pinhole_projection(pt, r, q)
-    assert result is None
+    np.testing.assert_array_equal(result, [np.inf, np.inf])
 
 def test_poi_to_pinhole_projection_off_axis():
     cam = lc.Camera(fov=np.pi/2, res=np.array([100, 100]))
     poi = np.array([1, 0, 0])
     r_cam = np.array([-1,-1,0])
     theta = 5 * np.pi/4
-    result_mag = np.dot(
-        (poi-r_cam)/np.linalg.norm(poi-r_cam),
-        np.array([1/np.sqrt(2), -1/np.sqrt(2),0])
-    )/2
+
+    x_cam_hat = np.array([-1/np.sqrt(2), -1/np.sqrt(2), 0])
+    y_cam_hat = np.array([1./np.sqrt(2), -1./np.sqrt(2), 0])
+
+    #result is the side length ratio times the focal length. Normalized focal length for 90 deg FOV is 0.5
+    result_mag = np.dot((poi-r_cam), y_cam_hat)/np.dot((poi-r_cam), -x_cam_hat) * 0.5
 
     #orientation 1 - camera pointed towards the origin. Z axes aligned
     rot_mat = np.array([
@@ -78,7 +81,6 @@ def test_poi_to_pinhole_projection_off_axis():
     ])
     q1 = quaternion.from_rotation_matrix(rot_mat)
     result1 = cam.poi_to_pinhole_projection(poi, r_cam, q1)
-    assert result1 is not None
     np.testing.assert_allclose(result1[0], result_mag, atol=1e-8)
 
     #orientation 2 - camera pointed towards the origin. Z axis aligned with global Y axis (portrait :))
@@ -89,7 +91,6 @@ def test_poi_to_pinhole_projection_off_axis():
     ]) @ rot_mat
     q2 = quaternion.from_rotation_matrix(rot_mat)
     result2 = cam.poi_to_pinhole_projection(poi, r_cam, q2)
-    assert result2 is not None
     np.testing.assert_allclose(result2[1], result_mag, atol=1e-8)
 
 # --- Curve class tests ---
@@ -495,10 +496,14 @@ class TestMatchFramesDimensions:
         ]
         
         camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
-        match_frames = lc.MatchFrames(geo_curves, cam_curves, camera)
+        match_frames = lc.MatchFrames(cam_curves, geo_curves, camera)
         
         # Test output dimensions
-        r, q = match_frames.auto_initial_r_q()
+        match_frames.auto_initial_r_q()
+
+        #get the initial r and q
+        r = match_frames.initial_r
+        q = match_frames.initial_q
         
         assert r.shape == (3,)  # Camera position
         assert isinstance(r, np.ndarray)
@@ -522,7 +527,7 @@ class TestMatchFramesDimensions:
         ]
         
         camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
-        match_frames = lc.MatchFrames(geo_curves, cam_curves, camera)
+        match_frames = lc.MatchFrames(cam_curves, geo_curves, camera)
         
         # Test output dimensions
         r, q = match_frames.run_unconstrained()
@@ -530,3 +535,31 @@ class TestMatchFramesDimensions:
         assert r.shape == (3,)  # Camera position
         assert isinstance(r, np.ndarray)
         assert isinstance(q, quaternion.quaternion)  # Camera orientation
+
+def test_visualize_camera_model():
+    """Test the camera model visualization function."""
+    
+    # Create a camera
+    camera = lc.Camera(fov=np.pi/2, res=np.array([1920, 1080]))
+    
+    # Create camera position and orientation
+    r = np.array([0.0, 0.0, 0.0])  # At origin
+    q = quaternion.from_rotation_matrix(np.eye(3))  # Identity rotation
+    
+    # Test visualization
+    ax = lc.visualize_camera_model(camera, r, q, show_fov=True)
+    
+    # Check that the plot was created
+    assert ax is not None
+    assert isinstance(ax, Axes3D)
+    
+    # Test without FOV
+    ax2 = lc.visualize_camera_model(camera, r, q, show_fov=False)
+    assert ax2 is not None
+    
+    # Test with different camera orientation
+    q_rotated = quaternion.from_rotation_vector([0, 0, np.pi/4])  # 45 degree rotation around z
+    ax3 = lc.visualize_camera_model(camera, r, q_rotated, show_fov=True)
+    assert ax3 is not None
+    
+    plt.close('all')  # Clean up plots

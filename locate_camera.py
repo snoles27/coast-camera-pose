@@ -40,6 +40,10 @@ class Camera:
         Returns:
             np.ndarray, shape (2,), normalized pinhole coordinates [x_norm, y_norm] in range [-0.5, 0.5]
         """
+        assert isinstance(point, np.ndarray), "Input 'point' must be a numpy array"
+        if point.shape != (2,):
+            raise IndexError(f"Input 'point' must have shape (2,), got {point.shape}")
+
         return np.array([
             (point[0] - self.res[0]/2)/self.res[0],
             (point[1] - self.res[1]/2)/self.res[0]
@@ -60,6 +64,16 @@ class Camera:
             np.ndarray, shape (2,), normalized pinhole coordinates [y_norm, z_norm] in range [-0.5, 0.5]
             OR [OUT_OF_FRAME_VALUE, OUT_OF_FRAME_VALUE] if point is not visible
         """
+    
+        # Check that point is a numpy array of shape (3,)
+        if not isinstance(point, np.ndarray) or point.shape != (3,):
+            raise IndexError(f"Input 'point' must be a numpy array of shape (3,), got {type(point)} with shape {getattr(point, 'shape', None)}")
+        # Check that r is a numpy array of shape (3,)
+        if not isinstance(r, np.ndarray) or r.shape != (3,):
+            raise IndexError(f"Input 'r' must be a numpy array of shape (3,), got {type(r)} with shape {getattr(r, 'shape', None)}")
+        # Check that q is a quaternion
+        if not isinstance(q, quaternion.quaternion):
+            raise IndexError(f"Input 'q' must be a quaternion object, got {type(q)}")
 
         #generate the point from the camera focal point to the point of interest
         r_poi_cam_ecef_norm = (point - r) / np.linalg.norm(point - r)
@@ -71,7 +85,7 @@ class Camera:
         r_x, r_y, r_z = r_poi_cam_cam_norm
         # Only return if point is in front of the camera (x < 0)
         if r_x>=0:
-            return [np.inf, np.inf]
+            return np.array([np.inf, np.inf])
         
         return np.array([-r_y/r_x * self.f, -r_z/r_x * self.f])
 
@@ -418,7 +432,9 @@ class MatchFrames:
         Assumes q is constrained to be normalized
         """
         def cost(x):
-            return self.com_difference_cost(x[0:3], x[3:7])
+            r = x[0:3]
+            q = quaternion.from_float_array(x[3:7])
+            return self.com_difference_cost(r, q)
         return cost
     
     def create_com_objective_unconstrained(self, penatly_factor):
@@ -426,7 +442,9 @@ class MatchFrames:
         Assumes optimization running on cost is not constrained to normalize q
         """
         def cost(x):
-            return self.com_difference_cost(x[0:3], x[3:7]/np.linalg.norm(x[3:7])) + penatly_factor * np.linalg.norm(x[3:7])
+            r = x[0:3]
+            q = quaternion.from_float_array(x[3:7])
+            return self.com_difference_cost(r, q) + penatly_factor * np.linalg.norm(x[3:7])
         return cost
     
     def create_curve_objective(self, N, k):
@@ -434,7 +452,9 @@ class MatchFrames:
         Assumes q is constrained to be normalized
         """
         def cost(x):
-            return self.curve_difference_cost(x[0:3], x[3:7], N, k)
+            r = x[0:3]
+            q = quaternion.from_float_array(x[3:7])
+            return self.curve_difference_cost(r, q, N, k)
         return cost
 
     def create_curve_objective_unconstrained(self, N, k, penatly_factor):
@@ -442,7 +462,9 @@ class MatchFrames:
         Assumes optimization running on cost is not constrained to normalize q
         """
         def cost(x):
-            return self.curve_difference_cost(x[0:3], x[3:7]/np.linalg.norm(x[3:7]), N, k) + penatly_factor * np.linalg.norm(x[3:7])
+            r = x[0:3]
+            q = quaternion.from_float_array(x[3:7])
+            return self.curve_difference_cost(r, q, N, k) + penatly_factor * np.linalg.norm(x[3:7])
         return cost
     
     def run_unconstrained(self, spline_order=1, number_samples=20, penatly_factor=100, max_iterations=1000):
@@ -541,17 +563,21 @@ def file_latlong_to_ecef(filename):
             x, y, z = transformer.transform(lon, lat, alt)
             fout.write(f"{x:.6f}, {y:.6f}, {z:.6f}\n")
 
-def plot_camera_location_orientation(r, q, ax=None):
+def visualize_camera_model(camera, r, q, ax=None, show_fov=True, fov_samples=20, axis_length=1000):
     """
-    Plot the camera coordinate axes and origin within the ECEF frame.
+    Comprehensive visualization of the camera model including position, orientation, and field of view.
 
     Args:
+        camera (Camera): Camera object with FOV and resolution
         r (np.ndarray): Camera position in ECEF (3,)
         q (np.quaternion): Camera orientation as quaternion (rotation from ECEF to camera frame)
         ax (mpl_toolkits.mplot3d.Axes3D, optional): 3D axes to plot on. If None, creates a new one.
+        show_fov (bool): Whether to show the field of view cone
+        fov_samples (int): Number of points to sample along FOV cone edges
+        axis_length (float): Length of camera coordinate axes in meters
 
     Returns:
-        ax: The matplotlib 3D axes with the camera axes plotted.
+        ax: The matplotlib 3D axes with the camera model plotted.
     """
     import numpy as np
     import matplotlib.pyplot as plt
@@ -560,7 +586,7 @@ def plot_camera_location_orientation(r, q, ax=None):
 
     # Create axes if not provided
     if ax is None:
-        fig = plt.figure()
+        fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection='3d')
 
     # Camera axes in camera frame (unit vectors)
@@ -575,19 +601,80 @@ def plot_camera_location_orientation(r, q, ax=None):
     colors = ['r', 'g', 'b']
     labels = ['x_cam', 'y_cam', 'z_cam']
 
-    # Set axis length (in meters)
-    axis_length = 1000  # You may want to adjust this for your scene
-
+    # Plot camera coordinate axes
     for i in range(3):
         start = r
         end = r + axes_ecef[:, i] * axis_length
         ax.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]],
-                color=colors[i], label=labels[i])
-        # Optionally, add a label at the tip
-        ax.text(end[0], end[1], end[2], labels[i], color=colors[i])
+                color=colors[i], label=labels[i], linewidth=2)
+        # Add a label at the tip
+        ax.text(end[0], end[1], end[2], labels[i], color=colors[i], fontsize=10)
 
     # Mark the camera origin
-    ax.scatter([r[0]], [r[1]], [r[2]], color='k', s=50, marker='o', label='Camera Origin')
+    ax.scatter([r[0]], [r[1]], [r[2]], color='k', s=100, marker='o', label='Camera Origin')
+
+    # Visualize Field of View cone
+    if show_fov:
+        # Create FOV cone in camera frame
+        # Camera looks along +x axis, FOV is in y-z plane
+        fov_half = camera.fov / 2
+        
+        # Create cone surface points
+        u = np.linspace(0, 2*np.pi, fov_samples)
+        v = np.linspace(0, axis_length, fov_samples)
+        U, V = np.meshgrid(u, v)
+        
+        # Cone surface in camera frame (x forward, y right, z down)
+        X = V
+        Y = V * np.tan(fov_half) * np.cos(U)
+        Z = V * np.tan(fov_half) * np.sin(U)
+        
+        # Transform cone points to ECEF
+        cone_points_cam = np.stack([X.flatten(), Y.flatten(), Z.flatten()], axis=1)
+        cone_points_ecef = quaternion.rotate_vectors(q_inv, cone_points_cam)
+        cone_points_ecef += r  # Translate to camera position
+        
+        # Reshape back to grid for surface plot
+        X_ecef = cone_points_ecef[:, 0].reshape(X.shape)
+        Y_ecef = cone_points_ecef[:, 1].reshape(Y.shape)
+        Z_ecef = cone_points_ecef[:, 2].reshape(Z.shape)
+        
+        # Plot FOV cone surface (semi-transparent)
+        ax.plot_surface(X_ecef, Y_ecef, Z_ecef, alpha=0.2, color='orange', 
+                       label='Field of View')
+        
+        # Plot FOV cone edges
+        edge_angles = np.linspace(0, 2*np.pi, fov_samples)
+        for angle in [0, np.pi/2, np.pi, 3*np.pi/2]:  # Plot 4 main edges
+            edge_x = np.linspace(0, axis_length, fov_samples)
+            edge_y = edge_x * np.tan(fov_half) * np.cos(angle)
+            edge_z = edge_x * np.tan(fov_half) * np.sin(angle)
+            
+            edge_points_cam = np.stack([edge_x, edge_y, edge_z], axis=1)
+            edge_points_ecef = quaternion.rotate_vectors(q_inv, edge_points_cam)
+            edge_points_ecef += r
+            
+            ax.plot(edge_points_ecef[:, 0], edge_points_ecef[:, 1], edge_points_ecef[:, 2],
+                   color='orange', linewidth=2, alpha=0.7)
+        
+        # Plot FOV boundary circle at maximum distance
+        circle_angles = np.linspace(0, 2*np.pi, fov_samples)
+        circle_x = axis_length * np.ones_like(circle_angles)
+        circle_y = axis_length * np.tan(fov_half) * np.cos(circle_angles)
+        circle_z = axis_length * np.tan(fov_half) * np.sin(circle_angles)
+        
+        circle_points_cam = np.stack([circle_x, circle_y, circle_z], axis=1)
+        circle_points_ecef = quaternion.rotate_vectors(q_inv, circle_points_cam)
+        circle_points_ecef += r
+        
+        ax.plot(circle_points_ecef[:, 0], circle_points_ecef[:, 1], circle_points_ecef[:, 2],
+               color='orange', linewidth=3, label='FOV Boundary')
+
+    # Add FOV information text
+    fov_deg = np.degrees(camera.fov)
+    ax.text2D(0.02, 0.98, f'FOV: {fov_deg:.1f}°', transform=ax.transAxes, 
+              fontsize=12, verticalalignment='top',
+              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     # Optionally, set equal aspect ratio for better visualization
     try:
@@ -597,14 +684,17 @@ def plot_camera_location_orientation(r, q, ax=None):
         pass
 
     # Set axis labels
-    ax.set_xlabel('X (ECEF)')
-    ax.set_ylabel('Y (ECEF)')
-    ax.set_zlabel('Z (ECEF)')
+    ax.set_xlabel('X (ECEF) [m]')
+    ax.set_ylabel('Y (ECEF) [m]')
+    ax.set_zlabel('Z (ECEF) [m]')
 
     # Show legend (avoid duplicate labels)
     handles, labels = ax.get_legend_handles_labels()
     unique = dict(zip(labels, handles))
-    ax.legend(unique.values(), unique.keys())
+    ax.legend(unique.values(), unique.keys(), loc='upper right')
+
+    # Set title
+    ax.set_title('Camera Model Visualization', fontsize=14, fontweight='bold')
 
     return ax
     
@@ -650,7 +740,7 @@ if __name__ == "__main__":
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    plot_camera_location_orientation(r, q, ax=ax)
+    visualize_camera_model(camera, r, q, ax=ax)
     geo_curves[0].plot(ax=ax)
     plt.show()
 
