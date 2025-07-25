@@ -38,3 +38,4 @@ where N+1 points on the curve are compared
 ## Resources
 
 https://docs.scipy.org/doc/scipy/tutorial/optimize.html#constrained-minimization
+https://github.com/gyroflow/lens_profiles/tree/main/GoPro (source for all the camera lens models one could ever need)
