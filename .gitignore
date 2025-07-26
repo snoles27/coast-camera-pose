@@ -3,6 +3,7 @@ output/
 old/
 gshhg-shp-2/
 .DS_Store
+*.mp4
 
 
 # Byte-compiled / optimized / DLL files
@@ -179,3 +180,4 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+gyroflow_lens_profiles/
