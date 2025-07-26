@@ -402,19 +402,68 @@ class MatchFrames:
         
         self.set_initial_r_q(r_cam, q_cam)
     
-    def run_unconstrained(self):
+    def run_PnP(self, N=20, k=1, plot=False):
         """
-        run the optimization after setting it up. Likely will involve a call of cv2.fisheye.solvePnP
+        run the PnP optimization. 
+        Args:
+            N: int, number of points to sample along the curves
+            k: int, spline order for interpolation
+            plot: bool, whether to plot the results
+        Returns:
+            tuple (r,q)
+            r: vector that points from the center of the earth (ECEF origin) to the camera position (camera frame origin)
+            q: quaternion that when applied to vectors written in the ECEF frame will give the vector as written in the camera frame 
         """
 
         #select a set of matching points from the photo curves and geo curves
+        photo_points = []
+        geo_points = []
+        parameters = np.linspace(0, 1, N)
+        for photo_curve in self.photo_curves:
+            photo_points.extend([photo_curve.get_point_along_curve(parameter, k=k) for parameter in parameters])
+        for geo_curve in self.geo_curves:
+            geo_points.extend([geo_curve.get_point_along_curve(parameter, k=k) for parameter in parameters])
+
+        photo_points = np.array(photo_points).astype(np.float64)
+        geo_points = np.array(geo_points).astype(np.float64)
+
+        print(f"{photo_points=}")
+        print(f"{geo_points=}")
 
         #pass matching point sets to cv2.fisheye.solvePnP
+        print(f"{self.camera.camera_matrix=}")
+        print(f"{self.camera.distortion_coeffs=}")
+
+        if self.initial_r is None or self.initial_q is None:
+            return_value,rvec, tvec = cv2.fisheye.solvePnP(
+                objectPoints=geo_points, 
+                imagePoints=photo_points, 
+                cameraMatrix=self.camera.camera_matrix, 
+                distCoeffs=self.camera.distortion_coeffs
+                )
+        else: 
+            rvec_initial,tvec_initial = r_q_2_rvec_tvec(self.initial_r, self.initial_q)
+            return_value,rvec, tvec = cv2.fisheye.solvePnP(
+                objectPoints=geo_points, 
+                imagePoints=photo_points, 
+                cameraMatrix=self.camera.camera_matrix, 
+                distCoeffs=self.camera.distortion_coeffs, 
+                rvec=rvec_initial, 
+                tvec=tvec_initial, 
+                useExtrinsicGuess=True
+                )
 
         #convert solutions to r and q in ECEF convention
+        r, q = rvec_tvec_2_r_q(rvec, tvec)
 
+        #optionally plot the results
+        if plot:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            self.plot_results(r, q, ax=ax)
+            plt.show()
 
-        pass
+        return r, q
 
     def plot_results(self, r, q, ax=None):
         """
@@ -600,6 +649,28 @@ def r_q_2_rvec_tvec(r,q):
 
     return rotation_vector, tvec
 
+def rvec_tvec_2_r_q(rvec, tvec):
+    """
+    Convert a rotation vector and translation vector with the cv2 convention to a quaternion and position in ECEF convention
+
+    Args:
+        rvec: rotation vector representing the oritentation of the object frame in the camera frame (cv2 convention)
+        tvec: vector that points from the camera frame origin to the center of the earth (ECEF origin) written in the camera frame
+    Returns:
+        r: vector that points from the center of the earth (ECEF origin) to the camera position (camera frame origin)
+        q: quaternion that when applied to vectors written in the ECEF frame will give the vector as written in the camera frame 
+    """
+    #convert rotation vector to quaternion
+    q = quaternion.from_rotation_vector(rvec)
+    print(f"{q=}")
+
+    #invert the transation vector so it points from the center of the earth to the camera position
+    #then rotate it to the ECEF frame. q applied to a vector rotates it from the ECEF frame to the camera frame, so we need to apply q^-1 to the translation vector
+    r = -tvec
+    r = quaternion.rotate_vectors(q.inverse(), r)
+
+    return r, q
+
 # Quaternion to rotation vector
 def quaternion_to_rotation_vector(q):
     """Convert quaternion to rotation vector using quaternion library."""
@@ -608,7 +679,7 @@ def quaternion_to_rotation_vector(q):
     
     # Convert to rotation vector using OpenCV
     rotation_vector, _ = cv2.Rodrigues(rotation_matrix)
-    return rotation_vector
+    return rotation_vector.reshape(3) #shape (3,)
 
 def visualize_camera_model(camera, r, q, ax=None, axis_length=1000):
     """
@@ -712,60 +783,27 @@ def ensure_equal_aspect_3d(ax):
 
     
 if __name__ == "__main__":
-
-
-    #generate the coordinate rotation 
-    phi = np.pi/6
-    u = [0,1,0]
-    q_array = [
-        np.cos(phi/2),
-        np.sin(phi/2)*u[0],
-        np.sin(phi/2)*u[1],
-        np.sin(phi/2)*u[2]
-    ]
-    qi = quaternion.from_float_array(q_array)
-
-    d = 50e3 #meters
-    Re = np.linalg.norm(np.array([5584.698255, 6356749.877461]))
-    ri = Re*np.array([0,0,1]) + d * np.array([1,0,1])
     
-    photo_curves = [Curve.from_file("frames/test_frame_1/curveA_photo_pinhole")]
-    geo_curves = [Curve.from_file("frames/test_frame_1/curveA_geo_ecef")]
+    photo_curves = [Curve.from_file("frames/test_frame_1/curveB_geo_projections/curveB_geo_projection_0")]
+    geo_curves = [Curve.from_file("frames/test_frame_1/curveB_geo_ecef")]
 
-    camera = Camera(fov=np.pi/2, res=(1024, 1024)) #resolution doesn't really matter for this example (I think)
+    #generate correct r,q for projection 0
+    r_cam = np.array([20000.0, 0.0, 6376752.330668157])
+    q_cam = quaternion.from_float_array([0.27059805, 0.65328148, 0.65328148, -0.27059805])
+
+    camera = FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
     match_frames = MatchFrames(photo_curves, geo_curves, camera)
-    match_frames.set_initial_r_q(ri, qi)
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_box_aspect([1, 1, 1])
-    visualize_camera_model(camera, ri, qi, ax=ax)
-    geo_curves[0].plot(ax=ax)    
-    plt.show()
+    #run with initial r,q
+    match_frames.set_initial_r_q(r_cam, q_cam)
 
-   
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    visualize_camera_model(camera, match_frames.initial_r, match_frames.initial_q, ax=ax)
-    geo_curves[0].plot(ax=ax)
-    plt.show()
-
-    
-    r, q = match_frames.run_unconstrained(max_iterations=200)
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    match_frames.plot_results(r, q, ax=ax)
-    plt.show()  
+    r, q = match_frames.run_PnP(N=10, k=1, plot=True)
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     visualize_camera_model(camera, r, q, ax=ax)
     geo_curves[0].plot(ax=ax)
     plt.show()
-
-
-
-
 
 
     

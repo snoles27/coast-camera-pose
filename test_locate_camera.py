@@ -643,3 +643,68 @@ def test_visualize_camera_model():
     assert ax3 is not None
     
     plt.close('all')  # Clean up plots
+
+
+def test_r_q_rvec_tvec_inverse():
+    """Test that r_q_2_rvec_tvec and rvec_tvec_2_r_q are inverse functions."""
+    
+    # Test case 1: Identity rotation, zero position
+    r1 = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+    q1 = quaternion.from_rotation_matrix(np.eye(3))
+    
+    # Apply forward transformation
+    rvec1, tvec1 = lc.r_q_2_rvec_tvec(r1, q1)
+    print(f"{rvec1=}")
+    print(f"{tvec1=}")
+    
+    # Apply inverse transformation
+    r1_recovered, q1_recovered = lc.rvec_tvec_2_r_q(rvec1, tvec1)
+    
+    # Check that we get back the original values
+    np.testing.assert_allclose(r1, r1_recovered, atol=1e-10)
+    np.testing.assert_allclose(quaternion.as_rotation_matrix(q1), 
+                              quaternion.as_rotation_matrix(q1_recovered), atol=1e-10)
+    
+    # Test case 2: Non-zero position, identity rotation
+    r2 = np.array([100.0, 200.0, 300.0], dtype=np.float64)
+    q2 = quaternion.from_rotation_matrix(np.eye(3))
+    
+    rvec2, tvec2 = lc.r_q_2_rvec_tvec(r2, q2)
+    r2_recovered, q2_recovered = lc.rvec_tvec_2_r_q(rvec2, tvec2)
+    
+    np.testing.assert_allclose(r2, r2_recovered, atol=1e-10)
+    np.testing.assert_allclose(quaternion.as_rotation_matrix(q2), 
+                              quaternion.as_rotation_matrix(q2_recovered), atol=1e-10)
+    
+    # Test case 3: Zero position, non-identity rotation (90 degrees around z-axis)
+    r3 = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+    q3 = quaternion.from_rotation_vector([0, 0, np.pi/2])
+    
+    rvec3, tvec3 = lc.r_q_2_rvec_tvec(r3, q3)
+    r3_recovered, q3_recovered = lc.rvec_tvec_2_r_q(rvec3, tvec3)
+    
+    np.testing.assert_allclose(r3, r3_recovered, atol=1e-10)
+    np.testing.assert_allclose(quaternion.as_rotation_matrix(q3), 
+                              quaternion.as_rotation_matrix(q3_recovered), atol=1e-10)
+    
+    # Test case 4: Non-zero position, non-identity rotation (45 degrees around x-axis)
+    r4 = np.array([50.0, -25.0, 75.0], dtype=np.float64)
+    q4 = quaternion.from_rotation_vector([np.pi/4, 0, 0])
+    
+    rvec4, tvec4 = lc.r_q_2_rvec_tvec(r4, q4)
+    r4_recovered, q4_recovered = lc.rvec_tvec_2_r_q(rvec4, tvec4)
+    
+    np.testing.assert_allclose(r4, r4_recovered, atol=1e-10)
+    np.testing.assert_allclose(quaternion.as_rotation_matrix(q4), 
+                              quaternion.as_rotation_matrix(q4_recovered), atol=1e-10)
+    
+    # Test case 5: Complex rotation (multiple axes)
+    r5 = np.array([123.456, -789.012, 345.678], dtype=np.float64)
+    q5 = quaternion.from_rotation_vector([np.pi/6, np.pi/4, np.pi/3])
+    
+    rvec5, tvec5 = lc.r_q_2_rvec_tvec(r5, q5)
+    r5_recovered, q5_recovered = lc.rvec_tvec_2_r_q(rvec5, tvec5)
+    
+    np.testing.assert_allclose(r5, r5_recovered, atol=1e-10)
+    np.testing.assert_allclose(quaternion.as_rotation_matrix(q5), 
+                              quaternion.as_rotation_matrix(q5_recovered), atol=1e-10)

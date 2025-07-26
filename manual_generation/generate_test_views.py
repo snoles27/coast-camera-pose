@@ -51,7 +51,7 @@ if __name__ == "__main__":
     #set up tuple for initial r,q
     inital_r_q = (r_cam_ecef, q_inital)
 
-    cam_pos_q_list = [inital_r_q]
+    cam_pos_q_list = [inital_r_q] 
 
     #generate two more camera orientations at 10 degree rotations about the y axis
     q2 = axis_angle_to_quaternion(u_y, np.pi/18)
