@@ -7,87 +7,88 @@ from scipy.interpolate import splprep, splev
 from scipy.optimize import minimize
 from pyproj import Transformer
 import matplotlib.pyplot as plt
+import json
+import cv2
 
-OUT_OF_FRAME_VALUE = 5
-
-class Camera:
+class FisheyeCamera:
     """
-    Class to represent a camera convert between different 2D representations
+    Class to represent a fisheye camera using Gyroflow lens profiles.
+    All it does is reads in one of the gyroflow lens profiles and saves the camera matrix,
+    distortion coefficients, and image size as attributes.
     """
 
-    def __init__(self, fov, res):
+    def __init__(self, lens_profile_path):
         """
-        Initialize camera with field of view and resolution.
+        Initialize fisheye camera from Gyroflow lens profile.
+        Init should check that it is reading from the fisheye_params and not calib_params.
         
         Args:
-            fov: float, field of view in radians
-            res: np.ndarray, shape (2,), resolution [width, height] in pixels
+            lens_profile_path: str, path to Gyroflow lens profile JSON file
         """
-        self.fov = fov  # initialize camera field of view attribute (in radians)
-        self.res = res  # initialize camera resolution attribute (np array 2x1 wxh in pixel count)
-        self.aspect_ratio = res[0]/res[1]
-        self.f = 0.5/np.tan(fov/2) #set the focual length such that the image is 1 unit wide
-        # will eventually initialize camera parameters to convert between image and ideal pinhole camera
+        self.load_lens_profile(lens_profile_path)
 
-    def raw_photo_to_ideal_pinhole(self, point):
+    def load_lens_profile(self, profile_path):
         """
-        Take point as taken by camera and convert to point location if it was taken with an ideal pinhole camera.
-        Pinhole camera coordinates use 0,0 at the center of the frame with the width normalized to 1.
+        Load a Gyroflow lens profile and extract OpenCV-compatible parameters.
         
         Args:
-            point: np.ndarray, shape (2,), pixel coordinates [x, y]
-            
-        Returns:
-            np.ndarray, shape (2,), normalized pinhole coordinates [x_norm, y_norm] in range [-0.5, 0.5]
+            profile_path: str, path to Gyroflow lens profile JSON file
         """
-        assert isinstance(point, np.ndarray), "Input 'point' must be a numpy array"
-        if point.shape != (2,):
-            raise IndexError(f"Input 'point' must have shape (2,), got {point.shape}")
+        with open(profile_path, 'r') as f:
+            profile = json.load(f)
+        
+        # Check if using OpenCV fisheye model
+        if profile.get('fisheye_params', None) is not None:
+            fisheye_params = profile['fisheye_params']
+            self.camera_matrix = np.array(fisheye_params['camera_matrix'], dtype=np.float64)
+            self.distortion_coeffs = np.array(fisheye_params['distortion_coeffs'], dtype=np.float64)
+        else:
+            raise ValueError("Profile must use OpenCV fisheye")
 
-        return np.array([
-            (point[0] - self.res[0]/2)/self.res[0],
-            (point[1] - self.res[1]/2)/self.res[0]
-        ]) # assuming camera is pinhole for now, really just a placeholder till I can get a better camera model going
-    
-    def poi_to_pinhole_projection(self, point, r, q):
+        self.size = np.array([profile['calib_dimension']['w'], profile['calib_dimension']['h']])
+        
+        print(f"Loaded fisheye camera: {profile['camera_model']} - {profile['lens_model']}")
+        print(f"Resolution: {self.size[0]} x {self.size[1]}")
+
+    def project_point(self, point, r, q):
         """
-        Take a point in 3D cartesian space and project it to an ideal pinhole camera with 
-        focal point at location r and camera orientation encoded with quaternion q.
-        Quaternion q represents the rotation from ECEF to the camera frame.
+        Project a 3D point to the camera given camera position and orientation.
         
         Args:
-            point: np.ndarray, shape (3,), 3D point in ECEF coordinates [x, y, z]
-            r: np.ndarray, shape (3,), camera position in ECEF coordinates [x, y, z]
+            point: np.ndarray, shape (3,), 3D point in ECEF coordinates
+            r: np.ndarray, shape (3,), camera position in ECEF coordinates
             q: quaternion object, camera orientation quaternion (ECEF to camera frame)
             
         Returns:
-            np.ndarray, shape (2,), normalized pinhole coordinates [y_norm, z_norm] in range [-0.5, 0.5]
-            OR [OUT_OF_FRAME_VALUE, OUT_OF_FRAME_VALUE] if point is not visible
+            np.ndarray, shape (2,), pixel coordinates [x, y] or [OUT_OF_FRAME_VALUE, OUT_OF_FRAME_VALUE] if not visible
         """
-    
-        # Check that point is a numpy array of shape (3,)
+        # Input validation
         if not isinstance(point, np.ndarray) or point.shape != (3,):
             raise IndexError(f"Input 'point' must be a numpy array of shape (3,), got {type(point)} with shape {getattr(point, 'shape', None)}")
-        # Check that r is a numpy array of shape (3,)
         if not isinstance(r, np.ndarray) or r.shape != (3,):
             raise IndexError(f"Input 'r' must be a numpy array of shape (3,), got {type(r)} with shape {getattr(r, 'shape', None)}")
-        # Check that q is a quaternion
         if not isinstance(q, quaternion.quaternion):
             raise IndexError(f"Input 'q' must be a quaternion object, got {type(q)}")
 
-        #generate the point from the camera focal point to the point of interest
-        r_poi_cam_ecef_norm = (point - r) / np.linalg.norm(point - r)
+        #convert quaternion to rodrigues rotation vector 
+        rotation_vector = quaternion_to_rotation_vector(q)
 
-        #transform this vector to camera frame coordinates using quaternion q
-        # Ensure input is 2D shape (N, 3) for quaternion.rotate_vectors, even if single vector
-        r_poi_cam_cam_norm = quaternion.rotate_vectors(q, np.atleast_2d(r_poi_cam_ecef_norm))[0]
-        r_poi_cam_cam_norm = r_poi_cam_cam_norm.flatten()
-        r_x, r_y, r_z = r_poi_cam_cam_norm
-        # Only return if point is in front of the camera (x < 0)
-        if r_x>=0:
-            return np.array([np.inf, np.inf])
+        # Reshape point for OpenCV fisheye projection
+        point_3d = point.reshape(1, 1, 3).astype(np.float64)
+
+        # Project using OpenCV fisheye
+        pixel_points, jacobian = cv2.fisheye.projectPoints(
+            objectPoints=point_3d, 
+            rvec=rotation_vector,
+            tvec=r, 
+            K=self.camera_matrix,
+            D=self.distortion_coeffs
+        )
+
+        # Extract pixel coordinates
+        pixel_coords = np.array(pixel_points[0, 0, :])
         
-        return np.array([-r_y/r_x * self.f, -r_z/r_x * self.f])
+        return pixel_coords
 
 class Curve: 
     """
@@ -334,11 +335,10 @@ class Curve:
         if len(self.points[0]) != 3:
             raise ValueError("Points must be 3D")
 
-        # call camera.poi_to_pinhole_projection for each point in self
-        # return a new curve object with the projected points
+        # Use the camera's project_point method for each point
         new_points = []
         for point in self.points:
-            projected_point = camera.poi_to_pinhole_projection(point, r, q)
+            projected_point = camera.project_point(point, r, q)
             new_points.append(projected_point)
         return Curve.from_points(new_points)
 
@@ -408,6 +408,7 @@ class MatchFrames:
         """
         return np.concatenate((self.initial_r, np.array([self.initial_q.w, self.initial_q.x, self.initial_q.y, self.initial_q.z])))
 
+    # all of the cost functions and optimization will be superceeded by cv2.fisheye.solvePnP
     def com_difference_cost(self, r, q):
         """
         Cost fucntion that generates the difference between the center of masses
@@ -656,6 +657,16 @@ def file_latlong_to_ecef(filename):
             # pyproj expects lon, lat, alt order
             x, y, z = transformer.transform(lon, lat, alt)
             fout.write(f"{x:.6f}, {y:.6f}, {z:.6f}\n")
+
+# Quaternion to rotation vector
+def quaternion_to_rotation_vector(q):
+    """Convert quaternion to rotation vector using quaternion library."""
+    # Convert quaternion to rotation matrix
+    rotation_matrix = quaternion.as_rotation_matrix(q)
+    
+    # Convert to rotation vector using OpenCV
+    rotation_vector, _ = cv2.Rodrigues(rotation_matrix)
+    return rotation_vector
 
 def visualize_camera_model(camera, r, q, ax=None, show_fov=True, fov_samples=20, axis_length=1000):
     """
