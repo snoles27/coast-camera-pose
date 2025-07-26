@@ -402,7 +402,7 @@ class MatchFrames:
         
         self.set_initial_r_q(r_cam, q_cam)
     
-    def run_PnP(self, N=20, k=1, plot=False):
+    def run_PnP(self, N=20, k=1, plot=False, flags=cv2.SOLVEPNP_ITERATIVE):
         """
         run the PnP optimization. 
         Args:
@@ -427,19 +427,18 @@ class MatchFrames:
         photo_points = np.array(photo_points).astype(np.float64)
         geo_points = np.array(geo_points).astype(np.float64)
 
-        print(f"{photo_points=}")
-        print(f"{geo_points=}")
-
-        #pass matching point sets to cv2.fisheye.solvePnP
-        print(f"{self.camera.camera_matrix=}")
-        print(f"{self.camera.distortion_coeffs=}")
+        # Reshape points to match OpenCV's expected format
+        # OpenCV expects imagePoints to be (N, 1, 2) for fisheye.solvePnP
+        photo_points = photo_points.reshape(-1, 1, 2)
+        geo_points = geo_points.reshape(-1, 1, 3)
 
         if self.initial_r is None or self.initial_q is None:
             return_value,rvec, tvec = cv2.fisheye.solvePnP(
                 objectPoints=geo_points, 
                 imagePoints=photo_points, 
                 cameraMatrix=self.camera.camera_matrix, 
-                distCoeffs=self.camera.distortion_coeffs
+                distCoeffs=self.camera.distortion_coeffs,
+                flags=flags
                 )
         else: 
             rvec_initial,tvec_initial = r_q_2_rvec_tvec(self.initial_r, self.initial_q)
@@ -450,8 +449,13 @@ class MatchFrames:
                 distCoeffs=self.camera.distortion_coeffs, 
                 rvec=rvec_initial, 
                 tvec=tvec_initial, 
-                useExtrinsicGuess=True
+                useExtrinsicGuess=True,
+                flags=flags
                 )
+
+        #reshape rvec to (3,)
+        rvec = rvec.reshape(3)
+        tvec = tvec.reshape(3)
 
         #convert solutions to r and q in ECEF convention
         r, q = rvec_tvec_2_r_q(rvec, tvec)
@@ -788,21 +792,29 @@ if __name__ == "__main__":
     geo_curves = [Curve.from_file("frames/test_frame_1/curveB_geo_ecef")]
 
     #generate correct r,q for projection 0
-    r_cam = np.array([20000.0, 0.0, 6376752.330668157])
-    q_cam = quaternion.from_float_array([0.27059805, 0.65328148, 0.65328148, -0.27059805])
+    r_cam_correct = np.array([20000.0, 0.0, 6376752.330668157])
+    q_cam_correct = quaternion.from_float_array([0.27059805, 0.65328148, 0.65328148, -0.27059805])
 
     camera = FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
     match_frames = MatchFrames(photo_curves, geo_curves, camera)
 
-    #run with initial r,q
-    match_frames.set_initial_r_q(r_cam, q_cam)
+    # #run with initial r,q
+    # match_frames.set_initial_r_q(r_cam_correct, q_cam_correct)
 
-    r, q = match_frames.run_PnP(N=10, k=1, plot=True)
+    r, q = match_frames.run_PnP(N=10, k=1, plot=True, flags=cv2.SOLVEPNP_SQPNP)
+
+    #print the comparison of the correct r,q and the estimated r,q
+    print(f"Correct r: {r_cam_correct}")
+    print(f"Estimated r: {r}")
+    print(f"Correct q: {q_cam_correct}")
+    print(f"Estimated q: {q}")
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     visualize_camera_model(camera, r, q, ax=ax)
+    visualize_camera_model(camera, r_cam_correct, q_cam_correct, ax=ax)
     geo_curves[0].plot(ax=ax)
+    ensure_equal_aspect_3d(ax)
     plt.show()
 
 
