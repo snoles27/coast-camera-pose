@@ -37,16 +37,16 @@ def axis_angle_to_quaternion(axis, angle):
 # manual file useful for generating views used for testing
 if __name__ == "__main__":
 
-    cam = lc.Camera(fov=np.pi/2, res=[100,100])
+    cam = lc.FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
 
     #inital (correct) camera location and orientation used to generate curve B photo pinhole
     d = 20e3 #meters
     Re = np.linalg.norm(np.array([5584.698255, 6356749.877461]))
     r_cam_ecef = Re*np.array([0,0,1]) + d * np.array([1,0,1])
 
-    phi = np.pi/4
-    u = [0,1,0]
-    q_inital = axis_angle_to_quaternion(u, phi)
+    phi = 3*np.pi/4
+    u_y = [0,1,0]
+    q_inital = axis_angle_to_quaternion([0,0,1], -np.pi/2) * axis_angle_to_quaternion(u_y, phi)
 
     #set up tuple for initial r,q
     inital_r_q = (r_cam_ecef, q_inital)
@@ -54,21 +54,21 @@ if __name__ == "__main__":
     cam_pos_q_list = [inital_r_q]
 
     #generate two more camera orientations at 10 degree rotations about the y axis
-    q2 = axis_angle_to_quaternion(u, np.pi/18)
-    q3 = axis_angle_to_quaternion(u, -np.pi/18)
+    q2 = axis_angle_to_quaternion(u_y, np.pi/18)
+    q3 = axis_angle_to_quaternion(u_y, -np.pi/18)
     cam_pos_q_list.append((r_cam_ecef, q2*q_inital))
     cam_pos_q_list.append((r_cam_ecef, q3*q_inital))
 
     #generate from a shallower viewing angle 
     phi = np.pi/12
     r4  = Re*np.array([0,0,1]) + d * np.sqrt(2) * np.array([np.cos(phi),0,np.sin(phi)])
-    q4 = axis_angle_to_quaternion(u, phi)
+    q4 = axis_angle_to_quaternion([0,0,1], -np.pi/2) * axis_angle_to_quaternion(u_y, phi + np.pi/2)
     cam_pos_q_list.append((r4, q4))
 
     #generate from steeper viewing angle 
-    phi = np.pi/3
+    phi = 5 * np.pi/12
     r5  = Re*np.array([0,0,1]) + d * np.sqrt(2) * np.array([np.cos(phi),0,np.sin(phi)])
-    q5 = axis_angle_to_quaternion(u, phi)
+    q5 = axis_angle_to_quaternion([0,0,1], -np.pi/2) * axis_angle_to_quaternion(u_y, phi + np.pi/2)
     cam_pos_q_list.append((r5, q5))
 
     #keep correct orientation but move it to the left and right 
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     cam_pos_q_list.append((r7, q_inital))
 
     #generate closer and further from the curve
-    d_list = [1e3, 5e3, 10e3, 20e3, 30e3, 40e3, 50e3]
+    d_list = [5e3, 10e3, 20e3, 30e3, 40e3, 50e3]
     for d in d_list:
         r_cam_ecef = Re*np.array([0,0,1]) + d * np.array([1,0,1])
         cam_pos_q_list.append((r_cam_ecef, q_inital))
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     ax = fig.add_subplot(111, projection='3d')
     curveB_geo_ecef.plot(ax=ax, show=False)
     for r, q in cam_pos_q_list:
-        lc.visualize_camera_model(cam, r, q, ax=ax, show_fov=False, axis_length=5000)
+        lc.visualize_camera_model(cam, r, q, ax=ax, axis_length=5000)
     lc.ensure_equal_aspect_3d(ax)
     plt.get_current_fig_manager().window.wm_geometry(MOVE_WINDOW_STR) # move the window
     plt.show()

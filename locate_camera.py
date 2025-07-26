@@ -270,12 +270,12 @@ class Curve:
             ax.set_zlabel('Z')
             
         else:
-            # 2D plotting (Y,Z frame)
-            y_fine, z_fine = interp_pts  # 2D points are in Y,Z
-            ax.plot(pts[:,0], pts[:,1], 'o', color=color, label=label+' (points)')  # pts[:,0]=Y, pts[:,1]=Z
-            ax.plot(y_fine, z_fine, '-', color=color, label=label + f' curve (k={k})', **plot_kwargs)
-            ax.set_xlabel('Y')
-            ax.set_ylabel('Z')
+            # 2D plotting (X,Y frame)
+            x_fine, y_fine = interp_pts  # 2D points are in X,Y
+            ax.plot(pts[:,0], pts[:,1], 'o', color=color, label=label+' (points)')  # pts[:,0]=X, pts[:,1]=Y
+            ax.plot(x_fine, y_fine, '-', color=color, label=label + f' curve (k={k})', **plot_kwargs)
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
 
         ax.legend()
         if show:
@@ -436,6 +436,26 @@ class MatchFrames:
         
         return ax
 
+
+#untested 
+def pixel_coords_plot(ax, pixel_points, photo_size, color='blue', label='', linestyle='-'):
+    """
+    take pixel coordinates (with origin in upper left corner) and plot them so they are in the correct orientation
+    for the camera model.
+
+    Args:
+        ax: matplotlib.axes.Axes, axis to plot on
+        pixel_points: np.ndarray, shape (N, 2), pixel coordinates
+        photo_size: tuple, shape (2,), width and height of the photo
+        color: str, color of the points
+        label: str, label of the points
+        linestyle: str, linestyle of the points
+    """
+    points_x = [x_pixel for x_pixel in pixel_points[:,0]]
+    points_y = [photo_size[1] - y_pixel for y_pixel in pixel_points[:,1]]
+    ax.plot(points_x, points_y, linestyle=linestyle, color=color, label=label)
+    return ax
+    
 #probably not needed anymore but doesn't hurt to have it for the visualization section
 def curve_difference_cost_2d(curve1, curve2, N, k, plot=False):
     """
