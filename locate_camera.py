@@ -47,12 +47,13 @@ class FisheyeCamera:
 
         self.size = np.array([profile['calib_dimension']['w'], profile['calib_dimension']['h']])
         
-        print(f"Loaded fisheye camera: {profile['camera_model']} - {profile['lens_model']}")
-        print(f"Resolution: {self.size[0]} x {self.size[1]}")
+        # print(f"Loaded fisheye camera: {profile['camera_model']} - {profile['lens_model']}")
+        # print(f"Resolution: {self.size[0]} x {self.size[1]}")
 
     def project_point(self, point, r, q):
         """
         Project a 3D point to the camera given camera position and orientation.
+        Note this does not handle the case where the point is behind the camera. It will still project the point. 
         
         Args:
             point: np.ndarray, shape (3,), 3D point in ECEF coordinates
@@ -70,8 +71,7 @@ class FisheyeCamera:
         if not isinstance(q, quaternion.quaternion):
             raise IndexError(f"Input 'q' must be a quaternion object, got {type(q)}")
 
-        #convert quaternion to rodrigues rotation vector 
-        rotation_vector = quaternion_to_rotation_vector(q)
+        rotation_vector, tvec = r_q_2_rvec_tvec(r, q)
 
         # Reshape point for OpenCV fisheye projection
         point_3d = point.reshape(1, 1, 3).astype(np.float64)
@@ -80,7 +80,7 @@ class FisheyeCamera:
         pixel_points, jacobian = cv2.fisheye.projectPoints(
             objectPoints=point_3d, 
             rvec=rotation_vector,
-            tvec=r, 
+            tvec=tvec, 
             K=self.camera_matrix,
             D=self.distortion_coeffs
         )
@@ -345,7 +345,7 @@ class Curve:
 class MatchFrames:
     """
     Class representing a framed problem ready for optimization
-    photo_curves: list of curve objects with 2D elements representing the coastline curves detected in the photos in the pinhole camera representation
+    photo_curves: list of curve objects with 2D elements representing the coastline curves detected in the photos. They are still in the raw photo pixel representation.
     geo_curves: list of curve objects with 3D elements representing the coastline curves in ECEF
 
     """
@@ -397,127 +397,24 @@ class MatchFrames:
         q_cam = quaternion.from_rotation_matrix(rotation_matrix)
         
         # Position camera at distance that ensures all curves are in view
-        # Distance = max_dist / tan(fov/2) to ensure everything fits in FOV
-        r_cam = geo_com_avg + (max_dist / np.tan(self.camera.fov/2)) * x_hat_cam  # Shape: (3,)
+        # Distance = max_dist * fov_x_to_pixel_ratio to ensure everything fits in FOV
+        r_cam = geo_com_avg + (max_dist * self.camera.camera_matrix[0,0]/self.camera.size[0]) * x_hat_cam  # Shape: (3,)
         
         self.set_initial_r_q(r_cam, q_cam)
     
-    def get_inital_x(self):
+    def run_unconstrained(self):
         """
-        Return the initial x vector for the optimization
-        """
-        return np.concatenate((self.initial_r, np.array([self.initial_q.w, self.initial_q.x, self.initial_q.y, self.initial_q.z])))
-
-    # all of the cost functions and optimization will be superceeded by cv2.fisheye.solvePnP
-    def com_difference_cost(self, r, q):
-        """
-        Cost fucntion that generates the difference between the center of masses
+        run the optimization after setting it up. Likely will involve a call of cv2.fisheye.solvePnP
         """
 
-        total_cost = 0
-        for index, _ in enumerate(self.photo_curves):
-            projected_geo_curve = self.geo_curves[index].project_to_camera(self.camera, r, q)
+        #select a set of matching points from the photo curves and geo curves
 
-            photo_com = self.photo_curves[index].center_of_mass()
-            geo_com = projected_geo_curve.center_of_mass()
-            total_cost += np.linalg.norm(photo_com - geo_com)
-        return total_cost
-    
-    def curve_difference_cost(self, r, q, N, k):
-        """
-        r vector representing camera location in ECEF
-        q quaternion representing camera orientation in ECEF
-        n: number of points to sample from the curve to compare
-        """
+        #pass matching point sets to cv2.fisheye.solvePnP
 
-        total_cost = 0
-        for index, _ in enumerate(self.photo_curves):
-            projected_geo_curve = self.geo_curves[index].project_to_camera(self.camera, r, q)
+        #convert solutions to r and q in ECEF convention
 
-            cost = curve_difference_cost_2d(self.photo_curves[index], projected_geo_curve, N, k)
-            total_cost += cost
-        return total_cost
 
-    def create_com_objective(self):
-        """
-        Assumes q is constrained to be normalized
-        """
-        def cost(x):
-            r = x[0:3]
-            q = quaternion.from_float_array(x[3:7])
-            return self.com_difference_cost(r, q)
-        return cost
-    
-    def create_com_objective_unconstrained(self, penatly_factor):
-        """
-        Assumes optimization running on cost is not constrained to normalize q
-        """
-        def cost(x):
-            r = x[0:3]
-            q = quaternion.from_float_array(x[3:7])
-            return self.com_difference_cost(r, q) + penatly_factor * np.linalg.norm(x[3:7])
-        return cost
-    
-    def create_curve_objective(self, N, k):
-        """
-        Assumes q is constrained to be normalized
-        """
-        def cost(x):
-            r = x[0:3]
-            q = quaternion.from_float_array(x[3:7])
-            return self.curve_difference_cost(r, q, N, k)
-        return cost
-
-    def create_curve_objective_unconstrained(self, N, k, penatly_factor):
-        """
-        Assumes optimization running on cost is not constrained to normalize q
-        """
-        def cost(x):
-            r = x[0:3]
-            q = quaternion.from_float_array(x[3:7])
-            return self.curve_difference_cost(r, q, N, k) + penatly_factor * np.linalg.norm(x[3:7])
-        return cost
-    
-    def run_unconstrained(self, spline_order=1, number_samples=20, penatly_factor=100, max_iterations=1000):
-        """
-        run the optimization after setting it up
-
-        Parameters:
-        spline_order: int, order of the spline
-        number_samples: int, number of samples along the curve
-        penatly_factor: float, penalty factor for unconstrained optimization
-        max_iterations: int, maximum number of iterations for the optimizer
-        """ 
-
-        # check if the initial condition is set
-        if self.initial_r is None or self.initial_q is None:
-            self.auto_initial_r_q()
-        
-        # create the objective function
-        com_objective = self.create_com_objective_unconstrained(penatly_factor)
-        curve_objective = self.create_curve_objective_unconstrained(number_samples, spline_order, penatly_factor)
-        
-        # run the coarse optimization first on the center of masses
-        x0 = self.get_inital_x()
-        res_initial = minimize(
-            com_objective,
-            x0,
-            method='Nelder-Mead',
-            options={'maxiter': max_iterations}
-        )
-        print(f"Completed course optimization with result {res_initial.x=}, {res_initial.success=}")
-        # run the full optimization on the curves with the solution to the center of mass optimization as the initial condition
-        x0 = res_initial.x
-        res = minimize(
-            curve_objective,
-            x0,
-            method='Nelder-Mead',
-            options={'maxiter': max_iterations}
-        )
-        print(f"Completed optimization with result {res_initial.x=}, {res_initial.success=}")
-
-        # return r and q solutions
-        return res.x[0:3], quaternion.from_float_array(res.x[3:7])
+        pass
 
     def plot_results(self, r, q, ax=None):
         """
@@ -539,6 +436,7 @@ class MatchFrames:
         
         return ax
 
+#probably not needed anymore but doesn't hurt to have it for the visualization section
 def curve_difference_cost_2d(curve1, curve2, N, k, plot=False):
     """
     Cost function for 2D curves
@@ -658,6 +556,30 @@ def file_latlong_to_ecef(filename):
             x, y, z = transformer.transform(lon, lat, alt)
             fout.write(f"{x:.6f}, {y:.6f}, {z:.6f}\n")
 
+#convert between ECEF and camera frame conventions
+def r_q_2_rvec_tvec(r,q):
+    """
+    Convert a camera position and orientation in ECEF convention to a rotation vector and translation vector with the cv2 convention
+    
+    Args:
+        r: vector that points from the center of the earth (ECEF origin) to the camera position (camera frame origin)
+        q: quaternion that when applied to vectors written in the ECEF frame will give the vector as written in the camera frame 
+    Returns:
+        rvec: rotation vector representing the oritentation of the object frame in the camera frame (cv2 convention)
+        tvec: vector that points from the camera frame origin to the center of the earth (ECEF origin) written in the camera frame
+    """
+
+    #convert quaternion to rodrigues rotation vector
+    #project points function takes orientation of ECEF in camera frame, so we need to transpose the quaternion
+    rotation_vector = quaternion_to_rotation_vector(q)
+    
+    #tvec is the location of the object frame in the camera frame
+    # so we need to invert the translation vector and than rotate to the camera frame
+    tvec = -r
+    tvec = quaternion.rotate_vectors(q, tvec)
+
+    return rotation_vector, tvec
+
 # Quaternion to rotation vector
 def quaternion_to_rotation_vector(q):
     """Convert quaternion to rotation vector using quaternion library."""
@@ -668,17 +590,15 @@ def quaternion_to_rotation_vector(q):
     rotation_vector, _ = cv2.Rodrigues(rotation_matrix)
     return rotation_vector
 
-def visualize_camera_model(camera, r, q, ax=None, show_fov=True, fov_samples=20, axis_length=1000):
+def visualize_camera_model(camera, r, q, ax=None, axis_length=1000):
     """
-    Comprehensive visualization of the camera model including position, orientation, and field of view.
+    Visualization of the camera model including position and orientation.
 
     Args:
-        camera (Camera): Camera object with FOV and resolution
+        camera (Camera): Camera object
         r (np.ndarray): Camera position in ECEF (3,)
         q (np.quaternion): Camera orientation as quaternion (rotation from ECEF to camera frame)
         ax (mpl_toolkits.mplot3d.Axes3D, optional): 3D axes to plot on. If None, creates a new one.
-        show_fov (bool): Whether to show the field of view cone
-        fov_samples (int): Number of points to sample along FOV cone edges
         axis_length (float): Length of camera coordinate axes in meters
     Returns:
         ax: The matplotlib 3D axes with the camera model plotted.
@@ -717,77 +637,14 @@ def visualize_camera_model(camera, r, q, ax=None, show_fov=True, fov_samples=20,
     # Mark the camera origin
     ax.scatter([r[0]], [r[1]], [r[2]], color='k', s=100, marker='o', label='Camera Origin')
 
-    # Visualize Field of View cone
-    if show_fov:
-        # Create FOV cone in camera frame
-        # Camera looks along +x axis, FOV is in y-z plane
-        fov_half = camera.fov / 2
-        
-        # Create cone surface points
-        u = np.linspace(0, 2*np.pi, fov_samples)
-        v = np.linspace(0, axis_length, fov_samples)
-        U, V = np.meshgrid(u, v)
-        
-        # Cone surface in camera frame (x forward, y right, z down)
-        X = V
-        Y = V * np.tan(fov_half) * np.cos(U)
-        Z = V * np.tan(fov_half) * np.sin(U)
-        
-        # Transform cone points to ECEF
-        cone_points_cam = np.stack([X.flatten(), Y.flatten(), Z.flatten()], axis=1)
-        cone_points_ecef = quaternion.rotate_vectors(q_inv, cone_points_cam)
-        cone_points_ecef += r  # Translate to camera position
-        
-        # Reshape back to grid for surface plot
-        X_ecef = cone_points_ecef[:, 0].reshape(X.shape)
-        Y_ecef = cone_points_ecef[:, 1].reshape(Y.shape)
-        Z_ecef = cone_points_ecef[:, 2].reshape(Z.shape)
-        
-        # Plot FOV cone surface (semi-transparent)
-        ax.plot_surface(X_ecef, Y_ecef, Z_ecef, alpha=0.2, color='orange', 
-                       label='Field of View')
-        
-        # Plot FOV cone edges
-        edge_angles = np.linspace(0, 2*np.pi, fov_samples)
-        for angle in [0, np.pi/2, np.pi, 3*np.pi/2]:  # Plot 4 main edges
-            edge_x = np.linspace(0, axis_length, fov_samples)
-            edge_y = edge_x * np.tan(fov_half) * np.cos(angle)
-            edge_z = edge_x * np.tan(fov_half) * np.sin(angle)
-            
-            edge_points_cam = np.stack([edge_x, edge_y, edge_z], axis=1)
-            edge_points_ecef = quaternion.rotate_vectors(q_inv, edge_points_cam)
-            edge_points_ecef += r
-            
-            ax.plot(edge_points_ecef[:, 0], edge_points_ecef[:, 1], edge_points_ecef[:, 2],
-                   color='orange', linewidth=2, alpha=0.7)
-        
-        # Plot FOV boundary circle at maximum distance
-        circle_angles = np.linspace(0, 2*np.pi, fov_samples)
-        circle_x = axis_length * np.ones_like(circle_angles)
-        circle_y = axis_length * np.tan(fov_half) * np.cos(circle_angles)
-        circle_z = axis_length * np.tan(fov_half) * np.sin(circle_angles)
-        
-        circle_points_cam = np.stack([circle_x, circle_y, circle_z], axis=1)
-        circle_points_ecef = quaternion.rotate_vectors(q_inv, circle_points_cam)
-        circle_points_ecef += r
-        
-        ax.plot(circle_points_ecef[:, 0], circle_points_ecef[:, 1], circle_points_ecef[:, 2],
-               color='orange', linewidth=3, label='FOV Boundary')
-
-    # Add FOV information text
-    fov_deg = np.degrees(camera.fov)
-    ax.text2D(0.02, 0.98, f'FOV: {fov_deg:.1f}°', transform=ax.transAxes, 
-              fontsize=12, verticalalignment='top',
-              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-
     # Set axis labels
     ax.set_xlabel('X (ECEF) [m]')
     ax.set_ylabel('Y (ECEF) [m]')
     ax.set_zlabel('Z (ECEF) [m]')
 
     # Show legend (avoid duplicate labels)
-    handles, labels = ax.get_legend_handles_labels()
-    unique = dict(zip(labels, handles))
+    handles, labels_ = ax.get_legend_handles_labels()
+    unique = dict(zip(labels_, handles))
     ax.legend(unique.values(), unique.keys(), loc='upper right')
 
     # Set title

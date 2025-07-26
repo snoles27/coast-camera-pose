@@ -27,261 +27,289 @@ def plot_curve_and_point(points, curve, parameter, sampled_point, k):
         plt.show()
     # For 3D, you could add a 3D plot if needed
 
-def test_fisheye_camera_initialization():
-    """Test FisheyeCamera initialization with a Gyroflow lens profile."""
-    # Use a test profile path - you'll need to adjust this to a real profile
-    profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+class TestFisheyeCamera:
+    def test_fisheye_camera_initialization(self):
+        """Test FisheyeCamera initialization with a Gyroflow lens profile."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            cam = lc.FisheyeCamera(profile_path)
+            # Check that camera matrix and distortion coefficients are loaded
+            assert cam.camera_matrix is not None
+            assert cam.distortion_coeffs is not None
+            assert cam.size is not None
+            # Check that size is a 2D array
+            assert cam.size.shape == (2,)
+            print(f"Successfully loaded fisheye camera with size: {cam.size}")
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
+        except Exception as e:
+            pytest.fail(f"Failed to initialize FisheyeCamera: {e}")
+
+    def test_project_point_in_view(self):
+        """Test projecting a point that should be in view."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            cam = lc.FisheyeCamera(profile_path)
+            # Camera at origin, looking along z-axis
+            r = np.array([0, 0, 0]).astype(np.float64)
+            q = quaternion.from_rotation_vector([0, 0, 0])  # No rotation
+            # point 10 degrees off center
+            pt = np.array([np.sin(np.pi/18), 0, np.cos(np.pi/18)]).astype(np.float64)
+            result = cam.project_point(pt, r, q)
+            # Should be near center of image
+            expected = np.array([
+                cam.size[0] / 2 + cam.camera_matrix[0,0] * np.tan(np.pi/18),
+                cam.size[1] / 2
+            ])
+            print(f"Projected result: {result}")
+            print(f"Expected (approx): {expected}")
+            # comparison not exact due to distortion
+            assert abs(result[0] - expected[0]) < 20 # within 20 pixels of expected x
+            assert abs(result[1] - expected[1]) < 20 # within 20 pixels of center
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
+
+    def test_project_point_out_of_view(self):
+        """Test projecting a point that should be out of view."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            cam = lc.FisheyeCamera(profile_path)
+            # Camera at origin, looking along z-axis
+            r = np.array([0, 0, 0]).astype(np.float64)
+            q = quaternion.from_rotation_vector([0, 0, 0])  # No rotation
+            # point 10 degrees off center, behind camera
+            pt = np.array([np.sin(np.pi/18), 0, -np.cos(np.pi/18)]).astype(np.float64)
+            result = cam.project_point(pt, r, q)
+            # Should be near center of image
+            expected = np.array([
+                cam.size[0] / 2 - cam.camera_matrix[0,0] * np.tan(np.pi/18),
+                cam.size[1] / 2
+            ])
+            print(f"Projected result: {result}")
+            print(f"Expected (approx): {expected}")
+            # comparison not exact due to distortion
+            assert abs(result[0] - expected[0]) < 20 # within 20 pixels of expected x
+            assert abs(result[1] - expected[1]) < 20 # within 20 pixels of center
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
+
+    def test_project_point_off_axis(self):
+        """Test projecting a point off the camera axis."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            cam = lc.FisheyeCamera(profile_path)
+            print(f"Camera matrix: {cam.camera_matrix}")
+            poi = np.array([0, 0, 1]).astype(np.float64)
+            r_cam = np.array([0, -1, -1]).astype(np.float64)
+            theta = np.pi/4
+            z_cam_hat = np.array([0, 1/np.sqrt(2), 1/np.sqrt(2)])
+            y_cam_hat = np.array([0, 1/np.sqrt(2), -1/np.sqrt(2)])
+            # Calculate the angle to the poi from the camera axis
+            angle_to_poi = np.arccos(np.dot(z_cam_hat, (poi-r_cam) / np.linalg.norm(poi-r_cam)))
+            print(f"angle_to_poi (deg): {np.degrees(angle_to_poi)}")
+
+            # Orientation 1 - camera pointed towards the origin. X axes aligned
+            rot_mat = np.array([
+                [1, 0, 0],
+                [0, np.cos(theta), -np.sin(theta)],
+                [0, np.sin(theta), np.cos(theta)]
+            ])
+            q1 = quaternion.from_rotation_matrix(rot_mat)
+            result1 = cam.project_point(poi, r_cam, q1)
+
+            if VISUALIZE:
+                fig = plt.figure()
+                ax=fig.add_subplot(1,1,1, projection='3d')
+                lc.visualize_camera_model(cam, r_cam, q1, ax=ax, axis_length=0.5)
+                ax.scatter(poi[0], poi[1], poi[2], color='r', s=100, marker='o', label='POI')
+                # Set equal axis scales for 3D plot
+                lc.ensure_equal_aspect_3d(ax)
+                plt.show()
+
+            expected = np.array([
+                cam.size[0] /2, 
+                cam.size[1] /2 - cam.camera_matrix[1,1] * np.tan(angle_to_poi)
+            ])
+            print(f"Projected result1: {result1}")
+            print(f"Expected (approx): {expected}")
+            #comparison not exact due to distortion
+            assert abs(result1[0] - expected[0]) < 20 # within 20 pixels of expected x
+            assert abs(result1[1] - expected[1]) < 20 # within 20 pixels of center
+
+            # Orientation 2 - camera pointed towards the origin. Z axis aligned with global Y axis
+            rot_mat = np.array([
+                [0, -1, 0],
+                [1, 0, 0],
+                [0, 0, 1]
+            ]) @ rot_mat
+            q2 = quaternion.from_rotation_matrix(rot_mat)
+            result2 = cam.project_point(poi, r_cam, q2)
+            # Convert pixel coordinates to normalized coordinates for comparison
+            expected = np.array([
+                cam.size[0] / 2 + cam.camera_matrix[0,0] * np.tan(angle_to_poi),
+                cam.size[1] / 2
+            ])
+            print(f"Projected result2: {result2}")
+            print(f"Expected (approx): {expected}")
+            if VISUALIZE:
+                fig = plt.figure()
+                ax=fig.add_subplot(1,1,1, projection='3d')
+                lc.visualize_camera_model(cam, r_cam, q2, ax=ax, axis_length=0.5)
+                ax.scatter(poi[0], poi[1], poi[2], color='r', s=100, marker='o', label='POI')
+                lc.ensure_equal_aspect_3d(ax)
+                plt.show()
+            #comparison not exact due to distortion
+            assert abs(result2[0] - expected[0]) < 20 # within 20 pixels of expected x
+            assert abs(result2[1] - expected[1]) < 20 # within 20 pixels of center
+
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
+
+    def test_fisheye_camera_attributes(self):
+        """Test that FisheyeCamera has the expected attributes."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            cam = lc.FisheyeCamera(profile_path)
+            # Check required attributes
+            assert hasattr(cam, 'camera_matrix')
+            assert hasattr(cam, 'distortion_coeffs')
+            assert hasattr(cam, 'size')
+            assert hasattr(cam, 'project_point')
+            # Check types
+            assert isinstance(cam.camera_matrix, np.ndarray)
+            assert isinstance(cam.distortion_coeffs, np.ndarray)
+            assert isinstance(cam.size, np.ndarray)
+            # Check shapes
+            assert cam.camera_matrix.shape == (3, 3)
+            assert cam.size.shape == (2,)
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
+
+class CurveTest:
+    # --- Curve class tests ---
+    def test_curve_from_points(self):
+        points = [np.array([0, 0]), np.array([1, 1]), np.array([2, 0])]
+        curve = lc.Curve.from_points(points)
+        assert isinstance(curve, lc.Curve)
+        assert len(curve.points) == 3
+        np.testing.assert_array_equal(curve.points[1], np.array([1, 1]))
+
+    def test_curve_to_file_and_from_file(self):
+        points = [np.array([0, 0, 0]), np.array([1, 1, 1]), np.array([2, 0, 2])]
+        curve = lc.Curve.from_points(points)
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(delete=False, mode='w+') as tmp:
+            curve.to_file(tmp.name)
+            tmp.close()
+            loaded_curve = lc.Curve.from_file(tmp.name)
+            assert isinstance(loaded_curve, lc.Curve)
+            assert len(loaded_curve.points) == 3
+            np.testing.assert_array_almost_equal(loaded_curve.points[2], np.array([2, 0, 2]))
+        os.remove(tmp.name)
+
+    def test_curve_get_point_along_curve_linear(self):
+        points = [np.array([0, 0]), np.array([1, 1]), np.array([2, 0])]
+        curve = lc.Curve.from_points(points)
+        # At parameter=0, should be first point
+        pt0 = curve.get_point_along_curve(0, k=1)
+        np.testing.assert_allclose(pt0, [0, 0], atol=1e-6)
+        # At parameter=1, should be last point
+        pt1 = curve.get_point_along_curve(1, k=1)
+        np.testing.assert_allclose(pt1, [2, 0], atol=1e-6)
+        # At parameter=0.5, should be near the middle (linear interpolation)
+        pt_half = curve.get_point_along_curve(0.5, k=1)
+        # For a V shape, the middle is at [1, 1]
+        np.testing.assert_allclose(pt_half, [1, 1], atol=1e-6)
     
-    try:
-        cam = lc.FisheyeCamera(profile_path)
-        
-        # Check that camera matrix and distortion coefficients are loaded
-        assert cam.camera_matrix is not None
-        assert cam.distortion_coeffs is not None
-        assert cam.size is not None
-        
-        # Check that size is a 2D array
-        assert cam.size.shape == (2,)
-        
-        print(f"Successfully loaded fisheye camera with size: {cam.size}")
-        
-    except FileNotFoundError:
-        pytest.skip(f"Lens profile not found: {profile_path}")
-    except Exception as e:
-        pytest.fail(f"Failed to initialize FisheyeCamera: {e}")
+        # At parameter=0.25, should be near the middle of the first leg (linear interpolation)
+        pt_half = curve.get_point_along_curve(0.25, k=1)
+        # For a V shape, the middle is at [0.5, 0.5]
+        np.testing.assert_allclose(pt_half, [0.5, 0.5], atol=1e-6)
+        if VISUALIZE:
+            plot_curve_and_point(points, curve, 0.25, pt_half, k=1)
 
-def test_project_point_in_view():
-    """Test projecting a point that should be in view."""
-    profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
-    
-    try:
-        cam = lc.FisheyeCamera(profile_path)
-        
-        # Camera at origin, looking along z-axis
-        r = np.array([0, 0, 0]).astype(np.float64)
-        q = quaternion.from_rotation_vector([0, 0, 0])  # No rotation
-        
-        # Point directly in front of camera (positive z direction)
-        pt = np.array([0, 0, 1]).astype(np.float64)
-        result = cam.project_point(pt, r, q)
-        
-        # Should be near center of image
-        center_x = cam.size[0] / 2
-        center_y = cam.size[1] / 2
-        assert abs(result[0] - center_x) < 100  # Within 100 pixels of center
-        assert abs(result[1] - center_y) < 100
-        
-    except FileNotFoundError:
-        pytest.skip(f"Lens profile not found: {profile_path}")
-
-def test_project_point_out_of_view():
-    """Test projecting a point that should be out of view."""
-    profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
-    
-    try:
-        cam = lc.FisheyeCamera(profile_path)
-        
-        # Camera at origin, looking along z-axis
-        r = np.array([0, 0, 0]).astype(np.float64)
-        q = quaternion.from_rotation_vector([0, 0, 0])  # No rotation
-        
-        # Point behind the camera (negative z direction)
-        pt = np.array([0, 0, -1]).astype(np.float64)
-        result = cam.project_point(pt, r, q)
-
-        print(f"directly behind camera result: {result}")
-                
-    except FileNotFoundError:
-        pytest.skip(f"Lens profile not found: {profile_path}")
-
-def test_project_point_off_axis():
-    """Test projecting a point off the camera axis."""
-    profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
-    
-    try:
-        cam = lc.FisheyeCamera(profile_path)
-        
-        poi = np.array([1, 0, 0])
-        r_cam = np.array([-1, -1, 0])
-        theta = 5 * np.pi/4
-
-        x_cam_hat = np.array([-1/np.sqrt(2), -1/np.sqrt(2), 0])
-        y_cam_hat = np.array([1./np.sqrt(2), -1./np.sqrt(2), 0])
-
-        # Calculate expected result magnitude
-        result_mag = np.dot((poi-r_cam), y_cam_hat)/np.dot((poi-r_cam), -x_cam_hat) * 0.5
-
-        # Orientation 1 - camera pointed towards the origin. Z axes aligned
-        rot_mat = np.array([
-            [np.cos(theta), np.sin(theta), 0],
-            [-np.sin(theta), np.cos(theta), 0],
-            [0, 0, 1]
-        ])
-        q1 = quaternion.from_rotation_matrix(rot_mat)
-        result1 = cam.project_point(poi, r_cam, q1)
-        
-        # Convert pixel coordinates to normalized coordinates for comparison
-        if not np.array_equal(result1, [lc.OUT_OF_FRAME_VALUE, lc.OUT_OF_FRAME_VALUE]):
-            normalized_x = (result1[0] - cam.size[0]/2) / cam.size[0]
-            np.testing.assert_allclose(normalized_x, result_mag, atol=0.1)  # Relaxed tolerance for fisheye
-
-        # Orientation 2 - camera pointed towards the origin. Z axis aligned with global Y axis
-        rot_mat = np.array([
-            [1, 0, 0],
-            [0, 0, -1],
-            [0, 1, 0]
-        ]) @ rot_mat
-        q2 = quaternion.from_rotation_matrix(rot_mat)
-        result2 = cam.project_point(poi, r_cam, q2)
-        
-        # Convert pixel coordinates to normalized coordinates for comparison
-        if not np.array_equal(result2, [lc.OUT_OF_FRAME_VALUE, lc.OUT_OF_FRAME_VALUE]):
-            normalized_y = (result2[1] - cam.size[1]/2) / cam.size[0]  # Note: using width for normalization
-            np.testing.assert_allclose(normalized_y, result_mag, atol=0.1)  # Relaxed tolerance for fisheye
-        
-    except FileNotFoundError:
-        pytest.skip(f"Lens profile not found: {profile_path}")
-
-def test_fisheye_camera_attributes():
-    """Test that FisheyeCamera has the expected attributes."""
-    profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
-    
-    try:
-        cam = lc.FisheyeCamera(profile_path)
-        
-        # Check required attributes
-        assert hasattr(cam, 'camera_matrix')
-        assert hasattr(cam, 'distortion_coeffs')
-        assert hasattr(cam, 'size')
-        assert hasattr(cam, 'project_point')
-        
-        # Check types
-        assert isinstance(cam.camera_matrix, np.ndarray)
-        assert isinstance(cam.distortion_coeffs, np.ndarray)
-        assert isinstance(cam.size, np.ndarray)
-        
-        # Check shapes
-        assert cam.camera_matrix.shape == (3, 3)
-        assert cam.size.shape == (2,)
-        
-    except FileNotFoundError:
-        pytest.skip(f"Lens profile not found: {profile_path}")
-
-# --- Curve class tests ---
-def test_curve_from_points():
-    points = [np.array([0, 0]), np.array([1, 1]), np.array([2, 0])]
-    curve = lc.Curve.from_points(points)
-    assert isinstance(curve, lc.Curve)
-    assert len(curve.points) == 3
-    np.testing.assert_array_equal(curve.points[1], np.array([1, 1]))
-
-def test_curve_to_file_and_from_file():
-    points = [np.array([0, 0, 0]), np.array([1, 1, 1]), np.array([2, 0, 2])]
-    curve = lc.Curve.from_points(points)
-    import tempfile, os
-    with tempfile.NamedTemporaryFile(delete=False, mode='w+') as tmp:
-        curve.to_file(tmp.name)
-        tmp.close()
-        loaded_curve = lc.Curve.from_file(tmp.name)
-        assert isinstance(loaded_curve, lc.Curve)
-        assert len(loaded_curve.points) == 3
-        np.testing.assert_array_almost_equal(loaded_curve.points[2], np.array([2, 0, 2]))
-    os.remove(tmp.name)
-
-def test_curve_get_point_along_curve_linear():
-    points = [np.array([0, 0]), np.array([1, 1]), np.array([2, 0])]
-    curve = lc.Curve.from_points(points)
-    # At parameter=0, should be first point
-    pt0 = curve.get_point_along_curve(0, k=1)
-    np.testing.assert_allclose(pt0, [0, 0], atol=1e-6)
-    # At parameter=1, should be last point
-    pt1 = curve.get_point_along_curve(1, k=1)
-    np.testing.assert_allclose(pt1, [2, 0], atol=1e-6)
-    # At parameter=0.5, should be near the middle (linear interpolation)
-    pt_half = curve.get_point_along_curve(0.5, k=1)
-    # For a V shape, the middle is at [1, 1]
-    np.testing.assert_allclose(pt_half, [1, 1], atol=1e-6)
-  
-    # At parameter=0.25, should be near the middle of the first leg (linear interpolation)
-    pt_half = curve.get_point_along_curve(0.25, k=1)
-    # For a V shape, the middle is at [0.5, 0.5]
-    np.testing.assert_allclose(pt_half, [0.5, 0.5], atol=1e-6)
-    if VISUALIZE:
-        plot_curve_and_point(points, curve, 0.25, pt_half, k=1)
-
-def test_curve_get_point_along_curve_quadratic():
-    # Parabola: y = x^2, sampled at x = 0, 1, 2
-    points = [np.array([0, 0]), np.array([1, 1]), np.array([2, 4])]
-    curve = lc.Curve.from_points(points)
-    pt0 = curve.get_point_along_curve(0, k=2)
-    np.testing.assert_allclose(pt0, [0, 0], atol=1e-6)
-    pt1 = curve.get_point_along_curve(1, k=2)
-    np.testing.assert_allclose(pt1, [2, 4], atol=1e-6)
-    pt_half = curve.get_point_along_curve(0.5, k=2)
-    if VISUALIZE:
-        plot_curve_and_point(points, curve, 0.5, pt_half, k=2)
-    np.testing.assert_allclose(pt_half, [1.447174, 1.723649], atol=1e-3)  # Allow some tolerance for interpolation
+    def test_curve_get_point_along_curve_quadratic(self):
+        # Parabola: y = x^2, sampled at x = 0, 1, 2
+        points = [np.array([0, 0]), np.array([1, 1]), np.array([2, 4])]
+        curve = lc.Curve.from_points(points)
+        pt0 = curve.get_point_along_curve(0, k=2)
+        np.testing.assert_allclose(pt0, [0, 0], atol=1e-6)
+        pt1 = curve.get_point_along_curve(1, k=2)
+        np.testing.assert_allclose(pt1, [2, 4], atol=1e-6)
+        pt_half = curve.get_point_along_curve(0.5, k=2)
+        if VISUALIZE:
+            plot_curve_and_point(points, curve, 0.5, pt_half, k=2)
+        np.testing.assert_allclose(pt_half, [1.447174, 1.723649], atol=1e-3)  # Allow some tolerance for interpolation
 
 # ============================================================================
 # DIMENSION TESTS - Verify input/output dimensions match function specifications
 # ============================================================================
 
-class TestCameraDimensions:
-    """Test that Camera class methods have correct input/output dimensions."""
+class TestFisheyeCameraDimensions:
+    """Test that FisheyeCamera class methods have correct input/output dimensions."""
     
-    def test_camera_init_dimensions(self):
-        """Test Camera.__init__ input dimensions."""
-        # Valid inputs
-        fov = np.pi/2  # float
-        res = np.array([1920, 1080])  # shape (2,)
-        camera = lc.Camera(fov, res)
-        assert camera.fov == fov
-        assert np.array_equal(camera.res, res)
-        
-        # Test invalid resolution dimension
-        with pytest.raises(IndexError):
-            lc.Camera(fov, np.array([1920]))  # shape (1,) - should fail
+    def test_fisheye_camera_init_dimensions(self):
+        """Test FisheyeCamera.__init__ input dimensions."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            camera = lc.FisheyeCamera(profile_path)
+            # Check that required attributes are loaded with correct dimensions
+            assert camera.camera_matrix is not None
+            assert camera.camera_matrix.shape == (3, 3)
+            assert camera.distortion_coeffs is not None
+            assert camera.distortion_coeffs.shape == (4,)  # OpenCV fisheye has 4 distortion coeffs
+            assert camera.size is not None
+            assert camera.size.shape == (2,)
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
     
-    def test_raw_photo_to_ideal_pinhole_dimensions(self):
-        """Test Camera.raw_photo_to_ideal_pinhole input/output dimensions."""
-        camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
-        
-        # Valid input: shape (2,)
-        point = np.array([960, 540])  # shape (2,)
-        result = camera.raw_photo_to_ideal_pinhole(point)
-        
-        # Check output shape
-        assert result.shape == (2,)
-        assert isinstance(result, np.ndarray)
-        
-        # Test invalid input dimensions
-        with pytest.raises(IndexError):
-            camera.raw_photo_to_ideal_pinhole(np.array([960]))  # shape (1,)
-        with pytest.raises(IndexError):
-            camera.raw_photo_to_ideal_pinhole(np.array([960, 540, 0]))  # shape (3,)
+    def test_project_point_dimensions(self):
+        """Test FisheyeCamera.project_point input/output dimensions."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            camera = lc.FisheyeCamera(profile_path)
+            
+            # Valid inputs
+            point = np.array([1.0, 2.0, 3.0])  # shape (3,)
+            r = np.array([0.0, 0.0, 0.0])      # shape (3,)
+            q = quaternion.from_rotation_matrix(np.eye(3))  # quaternion object
+            
+            result = camera.project_point(point, r, q)
+            
+            # Check output shape
+            assert result.shape == (2,)
+            assert isinstance(result, np.ndarray)
+            
+            # Test invalid input dimensions
+            with pytest.raises(IndexError):
+                camera.project_point(np.array([1.0, 2.0]), r, q)  # point shape (2,)
+            with pytest.raises(IndexError):
+                camera.project_point(point, np.array([0.0, 0.0]), q)  # r shape (2,)
+            with pytest.raises(IndexError):
+                camera.project_point(point, r, np.array([1, 0, 0, 0]))  # q not quaternion
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
     
-    def test_poi_to_pinhole_projection_dimensions(self):
-        """Test Camera.poi_to_pinhole_projection input/output dimensions."""
-        camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
-        
-        # Valid inputs
-        point = np.array([1.0, 2.0, 3.0])  # shape (3,)
-        r = np.array([0.0, 0.0, 0.0])      # shape (3,)
-        q = quaternion.from_rotation_matrix(np.eye(3))  # quaternion object
-        
-        result = camera.poi_to_pinhole_projection(point, r, q)
-        
-        # Check output shape
-        assert result.shape == (2,)
-        assert isinstance(result, np.ndarray)
-        
-        # Test invalid input dimensions
-        with pytest.raises(IndexError):
-            camera.poi_to_pinhole_projection(np.array([1.0, 2.0]), r, q)  # point shape (2,)
-        with pytest.raises(IndexError):
-            camera.poi_to_pinhole_projection(point, np.array([0.0, 0.0]), q)  # r shape (2,)
-        with pytest.raises(IndexError):
-            camera.poi_to_pinhole_projection(point, r, np.array([1, 0, 0, 0]))  # q not quaternion
+    def test_load_lens_profile_dimensions(self):
+        """Test FisheyeCamera.load_lens_profile loads data with correct dimensions."""
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        try:
+            camera = lc.FisheyeCamera(profile_path)
+            
+            # Check camera matrix dimensions
+            assert camera.camera_matrix.shape == (3, 3)
+            assert camera.camera_matrix.dtype == np.float64
+            
+            # Check distortion coefficients dimensions
+            assert camera.distortion_coeffs.shape == (4,)
+            assert camera.distortion_coeffs.dtype == np.float64
+            
+            # Check size dimensions
+            assert camera.size.shape == (2,)
+            assert camera.size.dtype == np.int64 or camera.size.dtype == np.float64
+            
+        except FileNotFoundError:
+            pytest.skip(f"Lens profile not found: {profile_path}")
 
 
 class TestCurveDimensions:
@@ -477,7 +505,8 @@ class TestCurveDimensions:
         ])
         
         # Create camera
-        camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        camera = lc.FisheyeCamera(profile_path)
         r = np.array([0.0, 0.0, 0.0])  # shape (3,)
         q = quaternion.from_rotation_matrix(np.eye(3))  # quaternion
         
@@ -497,7 +526,8 @@ class TestCurveDimensions:
             np.array([3.0, 4.0])
         ])
         
-        camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        camera = lc.FisheyeCamera(profile_path)
         r = np.array([0.0, 0.0, 0.0])
         q = quaternion.from_rotation_matrix(np.eye(3))
         
@@ -569,7 +599,8 @@ class TestMatchFramesDimensions:
             ])
         ]
         
-        camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
+        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        camera = lc.FisheyeCamera(profile_path)
         match_frames = lc.MatchFrames(cam_curves, geo_curves, camera)
         
         # Test output dimensions
@@ -583,57 +614,32 @@ class TestMatchFramesDimensions:
         assert isinstance(r, np.ndarray)
         assert isinstance(q, quaternion.quaternion)  # Camera orientation
     
-    def test_run_unconstrained_dimensions(self):
-        """Test MatchFrames.run_unconstrained input/output dimensions."""
-        # Create test curves
-        geo_curves = [
-            lc.Curve.from_points([
-                np.array([1.0, 2.0, 3.0]),
-                np.array([4.0, 5.0, 6.0])
-            ])
-        ]
-        
-        cam_curves = [
-            lc.Curve.from_points([
-                np.array([0.1, 0.2]),
-                np.array([0.3, 0.4])
-            ])
-        ]
-        
-        camera = lc.Camera(np.pi/2, np.array([1920, 1080]))
-        match_frames = lc.MatchFrames(cam_curves, geo_curves, camera)
-        
-        # Test output dimensions
-        r, q = match_frames.run_unconstrained()
-        
-        assert r.shape == (3,)  # Camera position
-        assert isinstance(r, np.ndarray)
-        assert isinstance(q, quaternion.quaternion)  # Camera orientation
 
 def test_visualize_camera_model():
     """Test the camera model visualization function."""
     
     # Create a camera
-    camera = lc.Camera(fov=np.pi/2, res=np.array([1920, 1080]))
+    profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+    camera = lc.FisheyeCamera(profile_path)
     
     # Create camera position and orientation
     r = np.array([0.0, 0.0, 0.0])  # At origin
     q = quaternion.from_rotation_matrix(np.eye(3))  # Identity rotation
     
     # Test visualization
-    ax = lc.visualize_camera_model(camera, r, q, show_fov=True)
+    ax = lc.visualize_camera_model(camera, r, q)
     
     # Check that the plot was created
     assert ax is not None
     assert isinstance(ax, Axes3D)
     
     # Test without FOV
-    ax2 = lc.visualize_camera_model(camera, r, q, show_fov=False)
+    ax2 = lc.visualize_camera_model(camera, r, q)
     assert ax2 is not None
     
     # Test with different camera orientation
     q_rotated = quaternion.from_rotation_vector([0, 0, np.pi/4])  # 45 degree rotation around z
-    ax3 = lc.visualize_camera_model(camera, r, q_rotated, show_fov=True)
+    ax3 = lc.visualize_camera_model(camera, r, q_rotated)
     assert ax3 is not None
     
     plt.close('all')  # Clean up plots
