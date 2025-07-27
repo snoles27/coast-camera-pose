@@ -53,9 +53,17 @@ def plot_curve_over_photo(photo_path, curve_input, title="Curve Over Photo", sav
     # Display the photo
     ax.imshow(img)
     
-    # Plot the curve points
+    # Plot the curve line
     ax.plot(curve_points[:, 0], curve_points[:, 1], 'r-', linewidth=2, label='Curve')
-    ax.plot(curve_points[:, 0], curve_points[:, 1], 'ro', markersize=4, alpha=0.7)
+    
+    # Plot all points as small circles
+    ax.plot(curve_points[:, 0], curve_points[:, 1], 'ro', markersize=2, alpha=0.5)
+    
+    # Mark the beginning (first point) with a triangle
+    ax.plot(curve_points[0, 0], curve_points[0, 1], 'r^', markersize=8, alpha=0.9, markeredgecolor='white', markeredgewidth=1)
+    
+    # Mark the end (last point) with a square
+    ax.plot(curve_points[-1, 0], curve_points[-1, 1], 'rs', markersize=8, alpha=0.9, markeredgecolor='white', markeredgewidth=1)
     
     # Set labels and title
     ax.set_title(title)
@@ -164,10 +172,22 @@ def plot_all_curves_over_photo(parent_folder, save_path=None):
             # Plot the curve
             curve_name = os.path.basename(curve_file)
             color = colors[i]
+            
+            # Plot the curve line
             ax.plot(curve_points[:, 0], curve_points[:, 1], '-', 
                    color=color, linewidth=2, label=curve_name, alpha=0.8)
+            
+            # Plot all points as small circles
             ax.plot(curve_points[:, 0], curve_points[:, 1], 'o', 
-                   color=color, markersize=3, alpha=0.7)
+                   color=color, markersize=2, alpha=0.5)
+            
+            # Mark the beginning (first point) with a triangle
+            ax.plot(curve_points[0, 0], curve_points[0, 1], '^', 
+                   color=color, markersize=8, alpha=0.9, markeredgecolor='white', markeredgewidth=1)
+            
+            # Mark the end (last point) with a square
+            ax.plot(curve_points[-1, 0], curve_points[-1, 1], 's', 
+                   color=color, markersize=8, alpha=0.9, markeredgecolor='white', markeredgewidth=1)
             
         except Exception as e:
             print(f"Error loading curve {curve_file}: {e}")

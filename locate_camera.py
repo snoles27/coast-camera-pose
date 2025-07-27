@@ -1,14 +1,12 @@
-from ast import Pass
-from math import cos
+
 import numpy as np
 import quaternion
-import numpy as np
 from scipy.interpolate import splprep, splev
-from scipy.optimize import minimize
 from pyproj import Transformer
 import matplotlib.pyplot as plt
 import json
 import cv2
+import cartopy.crs as ccrs
 
 class FisheyeCamera:
     """
@@ -481,11 +479,11 @@ class MatchFrames:
         #plot the projected geo curves
         projected_geo_curves = [curve.project_to_camera(self.camera, r, q) for curve in self.geo_curves]
         for projected_geo_curve in projected_geo_curves:
-            projected_geo_curve.plot(ax=ax, show=False, label = "geo")
+            projected_geo_curve.plot(ax=ax, show=False, label = "geo", color='red')
         
         #plot the photo curves
         for photo_curve in self.photo_curves:
-            photo_curve.plot(ax=ax, show=False, label="photo")
+            photo_curve.plot(ax=ax, show=False, label="photo", color='blue')
         
         return ax
 
@@ -785,37 +783,96 @@ def ensure_equal_aspect_3d(ax):
     ax.set_ylim(y_center - half_range, y_center + half_range)
     ax.set_zlim(z_center - half_range, z_center + half_range)
 
+def ecef_to_latlon(ecef_point):
+    """
+    Convert ECEF coordinates to latitude, longitude.
+    
+    Args:
+        ecef_point (np.ndarray): ECEF coordinates [x, y, z] in meters
+        
+    Returns:
+        tuple: (latitude, longitude) in degrees
+    """
+    # Set up transformer: ECEF to WGS84 geodetic
+    transformer = Transformer.from_crs("epsg:4978", "epsg:4979", always_xy=True)
+    
+    x, y, z = ecef_point
+    lon, lat, alt = transformer.transform(x, y, z)
+    
+    return lat, lon
+
+def plot_globe_with_point(ecef_point, title="ECEF Point on Globe", save_path=None):
+    """
+    Plot a 3D globe with geographic features and a single ECEF point.
+    
+    Args:
+        ecef_point (np.ndarray): ECEF coordinates [x, y, z] in meters
+        title (str): Title for the plot
+        save_path (str, optional): Path to save the plot image
+        
+    Returns:
+        tuple: (fig, ax) matplotlib figure and axes objects
+    """
+    # Convert ECEF to lat/lon for plotting
+    lat, lon = ecef_to_latlon(ecef_point)
+    
+    # Create the globe plot with Cartopy
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection=ccrs.Orthographic(central_longitude=lon, central_latitude=lat))
+    
+    # Add geographic features
+    ax.coastlines(linewidth=0.5, alpha=0.8)
+    ax.gridlines(draw_labels=True, alpha=0.5)
+    
+    # Plot the point
+    ax.plot(lon, lat, transform=ccrs.PlateCarree(), 
+            color='red', marker='o', markersize=10, 
+            markeredgecolor='white', markeredgewidth=2, 
+            label=f'ECEF Point: ({ecef_point[0]:.0f}, {ecef_point[1]:.0f}, {ecef_point[2]:.0f})')
+    
+    # Set title and legend
+    ax.set_title(title, fontsize=14, pad=20)
+    ax.legend(loc='upper right')
+    
+    # Save if requested
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Globe plot saved to: {save_path}")
+    
+    plt.show()
+    
+    return fig, ax
+
+
     
 if __name__ == "__main__":
     
-    photo_curves = [Curve.from_file("frames/test_frame_1/curveB_geo_projections/curveB_geo_projection_0")]
-    geo_curves = [Curve.from_file("frames/test_frame_1/curveB_geo_ecef")]
-
-    #generate correct r,q for projection 0
-    r_cam_correct = np.array([20000.0, 0.0, 6376752.330668157])
-    q_cam_correct = quaternion.from_float_array([0.27059805, 0.65328148, 0.65328148, -0.27059805])
+    photo_curves = [
+        Curve.from_file("frames/w3_full_13_13/photo_curves/curveA_island_1"),
+        Curve.from_file("frames/w3_full_13_13/photo_curves/curveB_main_coast")
+    ]
+    geo_curves = [
+        Curve.from_file("frames/w3_full_13_13/geo_curves/curveA_island_1_ecef"),
+        Curve.from_file("frames/w3_full_13_13/geo_curves/curveB_main_coast_ecef")
+    ]
 
     camera = FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
     match_frames = MatchFrames(photo_curves, geo_curves, camera)
 
-    # #run with initial r,q
-    # match_frames.set_initial_r_q(r_cam_correct, q_cam_correct)
-
-    r, q = match_frames.run_PnP(N=10, k=1, plot=True, flags=cv2.SOLVEPNP_SQPNP)
+    r, q = match_frames.run_PnP(N=300, k=1, plot=True, flags=cv2.SOLVEPNP_SQPNP)
 
     #print the comparison of the correct r,q and the estimated r,q
-    print(f"Correct r: {r_cam_correct}")
     print(f"Estimated r: {r}")
-    print(f"Correct q: {q_cam_correct}")
     print(f"Estimated q: {q}")
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     visualize_camera_model(camera, r, q, ax=ax)
-    visualize_camera_model(camera, r_cam_correct, q_cam_correct, ax=ax)
     geo_curves[0].plot(ax=ax)
     ensure_equal_aspect_3d(ax)
     plt.show()
+
+    plot_globe_with_point(r, title="Camera Position on Globe", save_path="camera_position_on_globe.png")
 
 
     
