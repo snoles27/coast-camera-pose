@@ -144,8 +144,8 @@ def plot_all_curves_over_photo(parent_folder, save_path=None):
     # Display the photo
     ax.imshow(img)
     
-    # Plot each curve with a different color
-    colors = plt.cm.tab10(np.linspace(0, 1, len(curve_files)))
+    # Plot each curve with a different color - use warm colors that contrast with blue
+    colors = plt.cm.hot(np.linspace(0.1, 0.9, len(curve_files)))
     
     for i, curve_file in enumerate(curve_files):
         try:
