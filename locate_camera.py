@@ -6,7 +6,9 @@ from pyproj import Transformer
 import matplotlib.pyplot as plt
 import json
 import cv2
-import cartopy.crs as ccrs
+import geopandas as gpd
+from shapely.geometry import Point
+from geodatasets import get_path
 
 class FisheyeCamera:
     """
@@ -783,7 +785,7 @@ def ensure_equal_aspect_3d(ax):
     ax.set_ylim(y_center - half_range, y_center + half_range)
     ax.set_zlim(z_center - half_range, z_center + half_range)
 
-def ecef_to_latlon(ecef_point):
+def ecef_to_latlonalt(ecef_point):
     """
     Convert ECEF coordinates to latitude, longitude.
     
@@ -799,52 +801,136 @@ def ecef_to_latlon(ecef_point):
     x, y, z = ecef_point
     lon, lat, alt = transformer.transform(x, y, z)
     
-    return lat, lon
+    return lat, lon, alt
 
-def plot_globe_with_point(ecef_point, title="ECEF Point on Globe", save_path=None):
+def plot_point_on_simple_map(lat, lon, point_label="Camera Position", figsize=(10, 6), show=True):
     """
-    Plot a 3D globe with geographic features and a single ECEF point.
+    Plot a latitude/longitude point on a simple world map using matplotlib.
+    Warning this is very slow 
     
     Args:
-        ecef_point (np.ndarray): ECEF coordinates [x, y, z] in meters
-        title (str): Title for the plot
-        save_path (str, optional): Path to save the plot image
+        lat (float): Latitude in degrees
+        lon (float): Longitude in degrees  
+        point_label (str): Label for the point on the map
+        figsize (tuple): Figure size (width, height)
+        show (bool): Whether to display the plot
         
     Returns:
-        tuple: (fig, ax) matplotlib figure and axes objects
+        fig, ax: matplotlib figure and axes objects
     """
-    # Convert ECEF to lat/lon for plotting
-    lat, lon = ecef_to_latlon(ecef_point)
+    # Create figure and axes
+    fig, ax = plt.subplots(figsize=figsize)
     
-    # Create the globe plot with Cartopy
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection=ccrs.Orthographic(central_longitude=lon, central_latitude=lat))
+    # Set up the world map boundaries
+    ax.set_xlim(-180, 180)
+    ax.set_ylim(-90, 90)
     
-    # Add geographic features
-    ax.coastlines(linewidth=0.5, alpha=0.8)
-    ax.gridlines(draw_labels=True, alpha=0.5)
+    # Add grid
+    ax.grid(True, alpha=0.3)
+    ax.set_xticks(np.arange(-180, 181, 30))
+    ax.set_yticks(np.arange(-90, 91, 30))
+    
+    # Add labels
+    ax.set_xlabel('Longitude (°)')
+    ax.set_ylabel('Latitude (°)')
+    
+    # Load a base map and clip to the plot region
+    shapefile_path = 'gshhg-shp-2/GSHHS_shp/h/GSHHS_h_L1.shp'
+    world = gpd.read_file(shapefile_path)
+
+    world.plot(ax=ax, color='white', edgecolor='black')
     
     # Plot the point
-    ax.plot(lon, lat, transform=ccrs.PlateCarree(), 
-            color='red', marker='o', markersize=10, 
-            markeredgecolor='white', markeredgewidth=2, 
-            label=f'ECEF Point: ({ecef_point[0]:.0f}, {ecef_point[1]:.0f}, {ecef_point[2]:.0f})')
+    ax.plot(lon, lat, 'ro', markersize=12, markeredgecolor='black', 
+            markeredgewidth=2, label=point_label)
     
-    # Set title and legend
-    ax.set_title(title, fontsize=14, pad=20)
+    # Add text label
+    ax.text(lon + 2, lat + 2, point_label, fontsize=12, fontweight='bold',
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
+    
+    # Set title
+    ax.set_title(f'World Map - {point_label}\nLatitude: {lat:.4f}°, Longitude: {lon:.4f}°', 
+                 fontsize=14, fontweight='bold')
+    
+    # Add legend
     ax.legend(loc='upper right')
     
-    # Save if requested
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Globe plot saved to: {save_path}")
+    # Set aspect ratio to be more map-like
+    ax.set_aspect('equal')
     
-    plt.show()
+    if show:
+        plt.tight_layout()
+        plt.show()
+    
+    return fig, ax
+
+def plot_point_on_zoom_map(lat, lon, point_label="Camera Position", 
+                          lat_margin=5, lon_margin=5, figsize=(10, 8), show=True):
+    """
+    Plot a latitude/longitude point on a zoomed-in map centered around the point.
+    
+    Args:
+        lat (float): Latitude in degrees
+        lon (float): Longitude in degrees
+        point_label (str): Label for the point on the map
+        lat_margin (float): Degrees of latitude margin around the point
+        lon_margin (float): Degrees of longitude margin around the point
+        figsize (tuple): Figure size (width, height)
+        show (bool): Whether to display the plot
+        
+    Returns:
+        fig, ax: matplotlib figure and axes objects
+    """
+    # Create figure and axes
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Set the map extent around the point
+    ax.set_xlim(lon - lon_margin, lon + lon_margin)
+    ax.set_ylim(lat - lat_margin, lat + lat_margin)
+    
+    # Add grid
+    ax.grid(True, alpha=0.3)
+    
+    # Add labels
+    ax.set_xlabel('Longitude (°)')
+    ax.set_ylabel('Latitude (°)')
+
+    # Load a base map (e.g., naturalearth_lowres)
+    # world = gpd.read_file(get_path('naturalearth.land'))
+    shapefile_path = 'gshhg-shp-2/GSHHS_shp/h/GSHHS_h_L1.shp'
+    world = gpd.read_file(shapefile_path)
+    
+    # Create a bounding box for the zoom region
+    from shapely.geometry import box
+    plot_bounds = box(lon - lon_margin, lat - lat_margin, lon + lon_margin, lat + lat_margin)
+    world_clipped = gpd.clip(world, plot_bounds)
+    world_clipped.plot(ax=ax, color='white', edgecolor='black')
+    
+    # Plot the point
+    ax.plot(lon, lat, 'ro', markersize=15, markeredgecolor='black', 
+            markeredgewidth=2, label=point_label)
+    
+    # Add text label
+    ax.text(lon + 0.1, lat + 0.1, point_label, fontsize=12, fontweight='bold',
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9))
+    
+    # Set title
+    ax.set_title(f'Regional Map - {point_label}\nLatitude: {lat:.4f}°, Longitude: {lon:.4f}°', 
+                 fontsize=14, fontweight='bold')
+    
+    # Add legend
+    ax.legend(loc='upper right')
+    
+    # Set aspect ratio to be more map-like
+    ax.set_aspect('equal')
+    
+    if show:
+        plt.tight_layout()
+        plt.show()
     
     return fig, ax
 
 
-    
 if __name__ == "__main__":
     
     photo_curves = [
@@ -865,14 +951,9 @@ if __name__ == "__main__":
     print(f"Estimated r: {r}")
     print(f"Estimated q: {q}")
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    visualize_camera_model(camera, r, q, ax=ax)
-    geo_curves[0].plot(ax=ax)
-    ensure_equal_aspect_3d(ax)
-    plt.show()
-
-    plot_globe_with_point(r, title="Camera Position on Globe", save_path="camera_position_on_globe.png")
-
-
+    #convert r to lat,lon
+    lat, lon, alt = ecef_to_latlonalt(r)
+    print(f"Camera position: {lat:.4f}°, {lon:.4f}°, {alt:.4f}m")
     
+    # Plot camera position on zoomed map
+    plot_point_on_zoom_map(lat, lon, "Estimated Camera Position", lat_margin=5, lon_margin=5)
