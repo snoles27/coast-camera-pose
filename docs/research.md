@@ -39,3 +39,5 @@ where N+1 points on the curve are compared
 
 https://docs.scipy.org/doc/scipy/tutorial/optimize.html#constrained-minimization
 https://github.com/gyroflow/lens_profiles/tree/main/GoPro (source for all the camera lens models one could ever need)
+https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html
+https://github.com/opencv/opencv/blob/4.x/modules/calib3d/src/fisheye.cpp#L1127
