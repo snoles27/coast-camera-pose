@@ -84,12 +84,12 @@ class PointSelector:
         # Display original image
         self.ax.imshow(self.original_image)
         
-        # Overlay edges in a different color (semi-transparent)
+        # Create a proper edge overlay - only color the edge pixels
         edge_overlay = np.zeros_like(self.original_image)
-        edge_overlay[self.edge_image > 0] = [1, 0, 0]  # Red edges
+        edge_overlay[self.edge_image > 0] = [0, 255, 0]  # Cyan edges
         self.ax.imshow(edge_overlay, alpha=0.3)
         
-        self.ax.set_title(f"Click to select points. Press 'Enter' to finish.\nImage: {os.path.basename(self.image_path)} (Red overlay shows detected edges)")
+        self.ax.set_title(f"Click to select points. Press 'Enter' to finish.\nImage: {os.path.basename(self.image_path)} (Cyan overlay shows detected edges)")
         self.ax.set_xlabel("X coordinate (pixels)")
         self.ax.set_ylabel("Y coordinate (pixels)")
         
@@ -113,7 +113,7 @@ class PointSelector:
             self.selected_points.append((snapped_x, snapped_y))
             
             # Draw a circle at the snapped point
-            circle = Circle((snapped_x, snapped_y), radius=2, color='yellow', fill=True, alpha=0.8)
+            circle = Circle((snapped_x, snapped_y), radius=1, color='yellow', fill=True, alpha=0.8)
             self.ax.add_patch(circle)
             
             # Add point number
