@@ -934,12 +934,12 @@ def plot_point_on_zoom_map(lat, lon, point_label="Camera Position",
 if __name__ == "__main__":
     
     photo_curves = [
-        Curve.from_file("frames/w3_full_13_13/photo_curves/curveA_island_1"),
-        Curve.from_file("frames/w3_full_13_13/photo_curves/curveB_main_coast")
+        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveA_island_1"),
+        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveB_main_coast")
     ]
     geo_curves = [
-        Curve.from_file("frames/w3_full_13_13/geo_curves/curveA_island_1_ecef"),
-        Curve.from_file("frames/w3_full_13_13/geo_curves/curveB_main_coast_ecef")
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveA_island_1_ecef"),
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast_ecef")
     ]
 
     camera = FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
@@ -956,4 +956,27 @@ if __name__ == "__main__":
     print(f"Camera position: {lat:.4f}°, {lon:.4f}°, {alt:.4f}m")
     
     # Plot camera position on zoomed map
-    plot_point_on_zoom_map(lat, lon, "Estimated Camera Position", lat_margin=5, lon_margin=5)
+    fig, ax = plot_point_on_zoom_map(lat, lon, "Estimated Camera Position", lat_margin=5, lon_margin=5, show=False)
+
+    geo_curves_lat_long = [
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveA_island_1"),
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast")
+    ]
+
+    # Plot the geo curves on the same map
+    for i, curve in enumerate(geo_curves_lat_long):
+        # Extract lat/lon coordinates from the curve points
+        lats = [point[0] for point in curve.points]  # latitude is first column
+        lons = [point[1] for point in curve.points]  # longitude is second column
+        
+        # Plot the curve on the same axes
+        ax.plot(lons, lats, linewidth=2, label=f'Geo Curve {chr(65+i)}', alpha=0.8)
+    
+    # Update the legend to include the new curves
+    ax.legend(loc='upper right')
+    
+    # Refresh the plot
+    plt.tight_layout()
+    plt.show()
+
+    
