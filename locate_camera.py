@@ -934,8 +934,8 @@ def plot_point_on_zoom_map(lat, lon, point_label="Camera Position",
 if __name__ == "__main__":
     
     photo_curves = [
-        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveA_island_1"),
-        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveB_main_coast")
+        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveA_island_1_rescaled"),
+        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveB_main_coast_rescaled")
     ]
     geo_curves = [
         Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveA_island_1_ecef"),

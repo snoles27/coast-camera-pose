@@ -35,6 +35,9 @@ where N+1 points on the curve are compared
 - Interpolating the curve encoding with higher order interpolation between the points (if still using the point based representation)
 
 
+seperation at f48 in w3_full_low
+
+
 ## Resources
 
 https://docs.scipy.org/doc/scipy/tutorial/optimize.html#constrained-minimization
