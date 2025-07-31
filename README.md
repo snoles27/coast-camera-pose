@@ -4,6 +4,33 @@ A Python tool for estimating camera position and orientation using photo curves 
 
 ## Quick Start
 
+### 1. Get Required Datasets
+
+Before running the tool, you need to obtain two datasets:
+
+#### Gyroflow Lens Profiles
+The tool uses Gyroflow lens profiles for camera calibration. Download the profiles:
+
+```bash
+# Clone the Gyroflow lens profiles repository
+git clone https://github.com/gyroflow/gyroflow-lens-profiles.git gyroflow_lens_profiles
+
+# Remove the git repository (keep only the static files)
+rm -rf gyroflow_lens_profiles/.git
+```
+
+#### Coastline Data (GSHHG)
+The tool uses GSHHG (Global Self-consistent, Hierarchical, High-resolution Geography) coastline data:
+
+
+Download GSHHG coastline data in shapefile format from this directory 
+
+*http://www.soest.hawaii.edu/pwessel/gshhg/gshhg-shp-2.3.7.zip*
+
+Move the extracted directory to the project root with the following name: `gshhg-shp-2`
+
+### 2. Install and Run
+
 ```bash
 # Install dependencies
 pip install -r requirements.txt
