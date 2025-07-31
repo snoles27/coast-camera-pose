@@ -935,11 +935,13 @@ if __name__ == "__main__":
     
     photo_curves = [
         Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveA_island_1_rescaled"),
-        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveB_main_coast_rescaled")
+        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveB_main_coast_rescaled"),
+        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveC_st_peter_south_rescaled")
     ]
     geo_curves = [
         Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveA_island_1_ecef"),
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast_ecef")
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast_ecef"),
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveC_st_peter_south_ecef")
     ]
 
     camera = FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
@@ -960,7 +962,8 @@ if __name__ == "__main__":
 
     geo_curves_lat_long = [
         Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveA_island_1"),
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast")
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast"),
+        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveC_st_peter_south")
     ]
 
     # Plot the geo curves on the same map
