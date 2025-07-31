@@ -130,13 +130,15 @@ def plot_all_curves_over_photo(parent_folder, save_path=None):
         pattern = os.path.join(photo_curves_dir, f"*{ext}")
         curve_files.extend(glob.glob(pattern))
     
-    # Filter out directories and non-curve files
-    curve_files = [f for f in curve_files if os.path.isfile(f) and not f.endswith('.txt')]
+    # Filter out directories, non-curve files, and rescaled files
+    curve_files = [f for f in curve_files if os.path.isfile(f) and 
+                   not f.endswith('.txt') and 
+                   not os.path.basename(f).endswith('_rescaled')]
     
     if not curve_files:
-        raise FileNotFoundError(f"No curve files found in {photo_curves_dir}")
+        raise FileNotFoundError(f"No curve files found in {photo_curves_dir} (excluding rescaled files)")
     
-    print(f"Found {len(curve_files)} curve files:")
+    print(f"Found {len(curve_files)} curve files (excluding rescaled):")
     for curve_file in curve_files:
         print(f"  - {os.path.basename(curve_file)}")
     

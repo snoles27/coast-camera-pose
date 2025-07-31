@@ -10,6 +10,9 @@ import geopandas as gpd
 from shapely.geometry import Point
 from geodatasets import get_path
 import os
+import sys
+import argparse
+import glob
 
 class FisheyeCamera:
     """
@@ -931,6 +934,118 @@ def plot_point_on_zoom_map(lat, lon, point_label="Camera Position",
     
     return fig, ax
 
+def find_matching_curves(frame_dir, curve_letters=None):
+    """
+    Find matching photo and geo curves in the frame directory
+    
+    Args:
+        frame_dir (str): Path to the frame directory
+        curve_letters (list): List of curve letters to include (e.g., ['a', 'b']). None means all.
+        
+    Returns:
+        tuple: (photo_curves, geo_curves) where each is a list of Curve objects
+    """
+    photo_curves = []
+    geo_curves = []
+    
+    # Find all photo curve files
+    photo_curve_dir = os.path.join(frame_dir, "photo_curves")
+    geo_curve_dir = os.path.join(frame_dir, "geo_curves")
+    
+    if not os.path.exists(photo_curve_dir):
+        raise FileNotFoundError(f"Photo curves directory not found: {photo_curve_dir}")
+    if not os.path.exists(geo_curve_dir):
+        raise FileNotFoundError(f"Geo curves directory not found: {geo_curve_dir}")
+    
+    # Get all photo curve files
+    photo_files = glob.glob(os.path.join(photo_curve_dir, "curve*"))
+    geo_files = glob.glob(os.path.join(geo_curve_dir, "curve*"))
+    
+    # Extract curve letters from filenames
+    photo_curve_letters = set()
+    for file_path in photo_files:
+        filename = os.path.basename(file_path)
+        if filename.startswith("curve"):
+            # Extract letter after "curve" (e.g., "curveA" -> "A")
+            letter = filename[5:6].upper()  # Take first character after "curve"
+            if letter.isalpha():
+                photo_curve_letters.add(letter)
+    
+    geo_curve_letters = set()
+    for file_path in geo_files:
+        filename = os.path.basename(file_path)
+        if filename.startswith("curve"):
+            # Extract letter after "curve" (e.g., "curveA" -> "A")
+            letter = filename[5:6].upper()  # Take first character after "curve"
+            if letter.isalpha():
+                # Only include if it ends with _ecef
+                if filename.endswith("_ecef"):
+                    geo_curve_letters.add(letter)
+    
+    # Determine which letters to process
+    if curve_letters is None:
+        # Use all letters that have both photo and geo curves
+        available_letters = photo_curve_letters.intersection(geo_curve_letters)
+    else:
+        # Use only specified letters that have both photo and geo curves
+        available_letters = set(letter.upper() for letter in curve_letters).intersection(
+            photo_curve_letters.intersection(geo_curve_letters)
+        )
+    
+    if not available_letters:
+        raise ValueError(f"No matching curve pairs found. Photo curves: {photo_curve_letters}, Geo curves (with _ecef): {geo_curve_letters}")
+    
+    print(f"Processing curves: {sorted(available_letters)}")
+    
+    # Load curves for each available letter
+    for letter in sorted(available_letters):
+        # Find photo curve file (prefer _rescaled version if available)
+        photo_pattern = os.path.join(photo_curve_dir, f"curve{letter}*")
+        photo_files = glob.glob(photo_pattern)
+        
+        # Prefer _rescaled version if available
+        photo_file = None
+        for file_path in photo_files:
+            if "_rescaled" in file_path:
+                photo_file = file_path
+                break
+        
+        # If no _rescaled version, use the first matching file
+        if photo_file is None and photo_files:
+            photo_file = photo_files[0]
+        
+        if photo_file is None:
+            print(f"Warning: No photo curve found for curve{letter}")
+            continue
+        
+        # Find geo curve file (must end with _ecef)
+        geo_pattern = os.path.join(geo_curve_dir, f"curve{letter}*_ecef")
+        geo_files = glob.glob(geo_pattern)
+        
+        if not geo_files:
+            print(f"Warning: No _ecef geo curve found for curve{letter}")
+            continue
+        
+        geo_file = geo_files[0]  # Use first matching _ecef geo curve
+        
+        # Load the curves
+        try:
+            photo_curve = Curve.from_file(photo_file)
+            geo_curve = Curve.from_file(geo_file)
+            
+            photo_curves.append(photo_curve)
+            geo_curves.append(geo_curve)
+            
+            print(f"Loaded curve{letter}:")
+            print(f"  Photo: {photo_file}")
+            print(f"  Geo (ECEF): {geo_file}")
+            
+        except Exception as e:
+            print(f"Error loading curve{letter}: {e}")
+            continue
+    
+    return photo_curves, geo_curves
+
 def load_lens_profile_from_frame(frame_dir):
     """
     Load lens profile path from a JSON file in the frame directory
@@ -964,66 +1079,107 @@ def load_lens_profile_from_frame(frame_dir):
     
     return lens_profile_path
 
+def main():
+    """
+    Main function for command line usage
+    """
+    parser = argparse.ArgumentParser(description='Locate camera position using photo and geo curves')
+    parser.add_argument('frame_dir', help='Path to the frame directory containing photo_curves and geo_curves')
+    parser.add_argument('-c', '--curves', help='Specify which curves to use (e.g., "a" for curveA, "ab" for curveA and curveB). Default: use all available curves.')
+    parser.add_argument('-n', '--num_points', type=int, default=300, help='Number of points N to use in SolvePnP (default: 300)')
+    
+    args = parser.parse_args()
+    
+    # Parse curve letters if specified
+    curve_letters = None
+    if args.curves:
+        curve_letters = list(args.curves.lower())
+        print(f"Using specified curves: {curve_letters}")
+    
+    # Validate frame directory
+    if not os.path.exists(args.frame_dir):
+        print(f"Error: Frame directory not found: {args.frame_dir}")
+        sys.exit(1)
+    
+    print(f"Processing frame directory: {args.frame_dir}")
+    print(f"Using N={args.num_points} points for SolvePnP")
+    
+    try:
+        # Find matching curves
+        photo_curves, geo_curves = find_matching_curves(args.frame_dir, curve_letters)
+        
+        if not photo_curves or not geo_curves:
+            print("Error: No valid curve pairs found")
+            sys.exit(1)
+        
+        print(f"\nFound {len(photo_curves)} curve pairs")
+        
+        # Load lens profile
+        try:
+            lens_profile_path = load_lens_profile_from_frame(args.frame_dir)
+            print(f"Using lens profile: {lens_profile_path}")
+        except (FileNotFoundError, KeyError) as e:
+            print(f"Error loading lens profile: {e}")
+            print("Falling back to default lens profile...")
+            lens_profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
+        
+        # Create camera and run PnP
+        camera = FisheyeCamera(lens_profile_path)
+        match_frames = MatchFrames(photo_curves, geo_curves, camera)
+        
+        print(f"\nRunning PnP algorithm with N={args.num_points}...")
+        r, q = match_frames.run_PnP(N=args.num_points, k=1, plot=True, flags=cv2.SOLVEPNP_SQPNP)
+        
+        # Print results
+        print(f"\nEstimated r: {r}")
+        print(f"Estimated q: {q}")
+        
+        # Convert to lat/lon
+        lat, lon, alt = ecef_to_latlonalt(r)
+        print(f"Camera position: {lat:.4f}°, {lon:.4f}°, {alt:.4f}m")
+        
+        # Plot camera position on map
+        fig, ax = plot_point_on_zoom_map(lat, lon, "Estimated Camera Position", lat_margin=5, lon_margin=5, show=False)
+        
+        # Load and plot geo curves in lat/lon (non-ECEF for display)
+        geo_curves_lat_long = []
+        for i, geo_curve in enumerate(geo_curves):
+            # Try to find corresponding lat/lon geo curve (non-ECEF)
+            geo_curve_dir = os.path.join(args.frame_dir, "geo_curves")
+            geo_pattern = os.path.join(geo_curve_dir, f"curve{chr(65+i)}*")
+            geo_files = glob.glob(geo_pattern)
+            
+            # Filter to only include non-ECEF files (those NOT ending with _ecef)
+            lat_lon_files = [f for f in geo_files if not f.endswith('_ecef')]
+            
+            if lat_lon_files:
+                try:
+                    lat_lon_curve = Curve.from_file(lat_lon_files[0])
+                    geo_curves_lat_long.append(lat_lon_curve)
+                    print(f"Loaded lat/lon geo curve for display: {lat_lon_files[0]}")
+                except Exception as e:
+                    print(f"Error loading lat/lon geo curve: {e}")
+        
+        # Plot the geo curves on the same map
+        for i, curve in enumerate(geo_curves_lat_long):
+            # Extract lat/lon coordinates from the curve points
+            lats = [point[0] for point in curve.points]  # latitude is first column
+            lons = [point[1] for point in curve.points]  # longitude is second column
+            
+            # Plot the curve on the same axes
+            ax.plot(lons, lats, linewidth=2, label=f'Geo Curve {chr(65+i)}', alpha=0.8)
+        
+        # Update the legend to include the new curves
+        ax.legend(loc='upper right')
+        
+        # Refresh the plot
+        plt.tight_layout()
+        plt.show()
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    
-    photo_curves = [
-        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveA_island_1_rescaled"),
-        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveB_main_coast_rescaled"),
-        Curve.from_file("frames/w3_full_low_f47533/photo_curves/curveC_st_peter_south_rescaled")
-    ]
-    geo_curves = [
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveA_island_1_ecef"),
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast_ecef"),
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveC_st_peter_south_ecef")
-    ]
-
-    # Load lens profile from frame directory configuration
-    frame_dir = "frames/w3_full_low_f47533"
-    try:
-        lens_profile_path = load_lens_profile_from_frame(frame_dir)
-        print(f"Using lens profile: {lens_profile_path}")
-    except (FileNotFoundError, KeyError) as e:
-        print(f"Error loading lens profile: {e}")
-        print("Falling back to default lens profile...")
-        lens_profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
-    
-    camera = FisheyeCamera(lens_profile_path)
-    match_frames = MatchFrames(photo_curves, geo_curves, camera)
-
-    r, q = match_frames.run_PnP(N=300, k=1, plot=True, flags=cv2.SOLVEPNP_SQPNP)
-
-    #print the comparison of the correct r,q and the estimated r,q
-    print(f"Estimated r: {r}")
-    print(f"Estimated q: {q}")
-
-    #convert r to lat,lon
-    lat, lon, alt = ecef_to_latlonalt(r)
-    print(f"Camera position: {lat:.4f}°, {lon:.4f}°, {alt:.4f}m")
-    
-    # Plot camera position on zoomed map
-    fig, ax = plot_point_on_zoom_map(lat, lon, "Estimated Camera Position", lat_margin=5, lon_margin=5, show=False)
-
-    geo_curves_lat_long = [
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveA_island_1"),
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveB_main_coast"),
-        Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveC_st_peter_south")
-    ]
-
-    # Plot the geo curves on the same map
-    for i, curve in enumerate(geo_curves_lat_long):
-        # Extract lat/lon coordinates from the curve points
-        lats = [point[0] for point in curve.points]  # latitude is first column
-        lons = [point[1] for point in curve.points]  # longitude is second column
-        
-        # Plot the curve on the same axes
-        ax.plot(lons, lats, linewidth=2, label=f'Geo Curve {chr(65+i)}', alpha=0.8)
-    
-    # Update the legend to include the new curves
-    ax.legend(loc='upper right')
-    
-    # Refresh the plot
-    plt.tight_layout()
-    plt.show()
-
+    main()
     

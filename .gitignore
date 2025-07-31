@@ -4,6 +4,7 @@ old/
 gshhg-shp-2/
 .DS_Store
 *.mp4
+lens_profile.json
 
 
 # Byte-compiled / optimized / DLL files
