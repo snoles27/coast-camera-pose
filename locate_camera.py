@@ -9,6 +9,7 @@ import cv2
 import geopandas as gpd
 from shapely.geometry import Point
 from geodatasets import get_path
+import os
 
 class FisheyeCamera:
     """
@@ -930,6 +931,39 @@ def plot_point_on_zoom_map(lat, lon, point_label="Camera Position",
     
     return fig, ax
 
+def load_lens_profile_from_frame(frame_dir):
+    """
+    Load lens profile path from a JSON file in the frame directory
+    
+    Args:
+        frame_dir (str): Path to the frame directory
+        
+    Returns:
+        str: Path to the lens profile file
+        
+    Raises:
+        FileNotFoundError: If lens_profile.json doesn't exist
+        KeyError: If lens_profile_path key is missing
+    """
+    lens_profile_file = os.path.join(frame_dir, "lens_profile.json")
+    
+    if not os.path.exists(lens_profile_file):
+        raise FileNotFoundError(f"Lens profile configuration not found: {lens_profile_file}")
+    
+    with open(lens_profile_file, 'r') as f:
+        config = json.load(f)
+    
+    if 'lens_profile_path' not in config:
+        raise KeyError(f"Missing 'lens_profile_path' key in {lens_profile_file}")
+    
+    lens_profile_path = config['lens_profile_path']
+    
+    # Check if the lens profile file exists
+    if not os.path.exists(lens_profile_path):
+        raise FileNotFoundError(f"Lens profile file not found: {lens_profile_path}")
+    
+    return lens_profile_path
+
 
 if __name__ == "__main__":
     
@@ -944,7 +978,17 @@ if __name__ == "__main__":
         Curve.from_file("frames/w3_full_low_f47533/geo_curves/curveC_st_peter_south_ecef")
     ]
 
-    camera = FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
+    # Load lens profile from frame directory configuration
+    frame_dir = "frames/w3_full_low_f47533"
+    try:
+        lens_profile_path = load_lens_profile_from_frame(frame_dir)
+        print(f"Using lens profile: {lens_profile_path}")
+    except (FileNotFoundError, KeyError) as e:
+        print(f"Error loading lens profile: {e}")
+        print("Falling back to default lens profile...")
+        lens_profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
+    
+    camera = FisheyeCamera(lens_profile_path)
     match_frames = MatchFrames(photo_curves, geo_curves, camera)
 
     r, q = match_frames.run_PnP(N=300, k=1, plot=True, flags=cv2.SOLVEPNP_SQPNP)

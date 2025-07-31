@@ -37,7 +37,8 @@ def axis_angle_to_quaternion(axis, angle):
 # manual file useful for generating views used for testing
 if __name__ == "__main__":
 
-    cam = lc.FisheyeCamera("gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json")
+    # Replace line 39:
+    cam = lc.FisheyeCamera("gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json")
 
     #inital (correct) camera location and orientation used to generate curve B photo pinhole
     d = 20e3 #meters

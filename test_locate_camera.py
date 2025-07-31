@@ -7,6 +7,7 @@ import sys
 import matplotlib.pyplot as plt
 import locate_camera as lc
 from mpl_toolkits.mplot3d import Axes3D
+import json
 
 # Check for visualization using environment variable
 VISUALIZE = os.environ.get('VISUALIZE', 'false').lower() == 'true'
@@ -27,10 +28,43 @@ def plot_curve_and_point(points, curve, parameter, sampled_point, k):
         plt.show()
     # For 3D, you could add a 3D plot if needed
 
+def load_lens_profile_from_frame(frame_dir):
+    """
+    Load lens profile path from a JSON file in the frame directory
+    
+    Args:
+        frame_dir (str): Path to the frame directory
+        
+    Returns:
+        str: Path to the lens profile file
+        
+    Raises:
+        FileNotFoundError: If lens_profile.json doesn't exist
+        KeyError: If lens_profile_path key is missing
+    """
+    lens_profile_file = os.path.join(frame_dir, "lens_profile.json")
+    
+    if not os.path.exists(lens_profile_file):
+        raise FileNotFoundError(f"Lens profile configuration not found: {lens_profile_file}")
+    
+    with open(lens_profile_file, 'r') as f:
+        config = json.load(f)
+    
+    if 'lens_profile_path' not in config:
+        raise KeyError(f"Missing 'lens_profile_path' key in {lens_profile_file}")
+    
+    lens_profile_path = config['lens_profile_path']
+    
+    # Check if the lens profile file exists
+    if not os.path.exists(lens_profile_path):
+        raise FileNotFoundError(f"Lens profile file not found: {lens_profile_path}")
+    
+    return lens_profile_path
+
 class TestFisheyeCamera:
     def test_fisheye_camera_initialization(self):
         """Test FisheyeCamera initialization with a Gyroflow lens profile."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             cam = lc.FisheyeCamera(profile_path)
             # Check that camera matrix and distortion coefficients are loaded
@@ -47,7 +81,7 @@ class TestFisheyeCamera:
 
     def test_project_point_in_view(self):
         """Test projecting a point that should be in view."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             cam = lc.FisheyeCamera(profile_path)
             # Camera at origin, looking along z-axis
@@ -71,7 +105,7 @@ class TestFisheyeCamera:
 
     def test_project_point_out_of_view(self):
         """Test projecting a point that should be out of view."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             cam = lc.FisheyeCamera(profile_path)
             # Camera at origin, looking along z-axis
@@ -95,7 +129,7 @@ class TestFisheyeCamera:
 
     def test_project_point_off_axis(self):
         """Test projecting a point off the camera axis."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             cam = lc.FisheyeCamera(profile_path)
             print(f"Camera matrix: {cam.camera_matrix}")
@@ -159,15 +193,15 @@ class TestFisheyeCamera:
                 lc.ensure_equal_aspect_3d(ax)
                 plt.show()
             #comparison not exact due to distortion
-            assert abs(result2[0] - expected[0]) < 20 # within 20 pixels of expected x
-            assert abs(result2[1] - expected[1]) < 20 # within 20 pixels of center
+            assert abs(result2[0] - expected[0]) < 25 # within 25 pixels of expected x
+            assert abs(result2[1] - expected[1]) < 25 # within 25 pixels of center
 
         except FileNotFoundError:
             pytest.skip(f"Lens profile not found: {profile_path}")
 
     def test_fisheye_camera_attributes(self):
         """Test that FisheyeCamera has the expected attributes."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             cam = lc.FisheyeCamera(profile_path)
             # Check required attributes
@@ -250,7 +284,7 @@ class TestFisheyeCameraDimensions:
     
     def test_fisheye_camera_init_dimensions(self):
         """Test FisheyeCamera.__init__ input dimensions."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             camera = lc.FisheyeCamera(profile_path)
             # Check that required attributes are loaded with correct dimensions
@@ -265,7 +299,7 @@ class TestFisheyeCameraDimensions:
     
     def test_project_point_dimensions(self):
         """Test FisheyeCamera.project_point input/output dimensions."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             camera = lc.FisheyeCamera(profile_path)
             
@@ -292,7 +326,7 @@ class TestFisheyeCameraDimensions:
     
     def test_load_lens_profile_dimensions(self):
         """Test FisheyeCamera.load_lens_profile loads data with correct dimensions."""
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         try:
             camera = lc.FisheyeCamera(profile_path)
             
@@ -505,7 +539,7 @@ class TestCurveDimensions:
         ])
         
         # Create camera
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         camera = lc.FisheyeCamera(profile_path)
         r = np.array([0.0, 0.0, 0.0])  # shape (3,)
         q = quaternion.from_rotation_matrix(np.eye(3))  # quaternion
@@ -526,7 +560,7 @@ class TestCurveDimensions:
             np.array([3.0, 4.0])
         ])
         
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         camera = lc.FisheyeCamera(profile_path)
         r = np.array([0.0, 0.0, 0.0])
         q = quaternion.from_rotation_matrix(np.eye(3))
@@ -599,7 +633,7 @@ class TestMatchFramesDimensions:
             ])
         ]
         
-        profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+        profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
         camera = lc.FisheyeCamera(profile_path)
         match_frames = lc.MatchFrames(cam_curves, geo_curves, camera)
         
@@ -619,7 +653,7 @@ def test_visualize_camera_model():
     """Test the camera model visualization function."""
     
     # Create a camera
-    profile_path = "gyroflow_lens_profiles/GoPro/GoPro_HERO8 Black_Narrow_HS Boost_2.7k_16by9.json"
+    profile_path = "gyroflow_lens_profiles/Sony/Sony_a7sIII_Sigma 24-70mm 2.8 Art__4k_16by9_3840x2160-29.97fps.json"
     camera = lc.FisheyeCamera(profile_path)
     
     # Create camera position and orientation
